@@ -1,0 +1,9 @@
+{
+  "id": "publicites",
+  "name": "Publicités / Ad Creative",
+  "source": "GPT 2.4 — Paid Advertising / Ad Creative Engine",
+  "role": "skill",
+  "description": "Concepts publicitaires, angles, hooks, copy, scripts, briefs créatifs, variantes testables, cohérence pub→destination, QA et apprentissage des performances créatives.",
+  "keywords": ["publicité", "pub", "ads", "meta ads", "créatif", "hook", "angle", "copy", "variante", "test créatif", "retargeting", "ugc", "cta"],
+  "always_loaded": false
+}

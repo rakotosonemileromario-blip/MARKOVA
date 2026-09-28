@@ -1,0 +1,9 @@
+{
+  "id": "direction-marketing",
+  "name": "Direction Marketing",
+  "source": "GPT 2.1 — AI Digital Marketing Director (Master Prompt)",
+  "role": "core",
+  "description": "Stratégie globale, diagnostic du funnel, goulot principal, priorités, objectifs, KPI, plan d'action, analyse des performances et optimisation.",
+  "keywords": ["stratégie", "analyse globale", "priorité", "goulot", "funnel", "objectif", "kpi", "plan marketing", "qu'est-ce qu'on doit faire", "diagnostic", "optimisation", "budget"],
+  "always_loaded": true
+}

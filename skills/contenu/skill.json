@@ -1,0 +1,9 @@
+{
+  "id": "contenu",
+  "name": "Production de contenu",
+  "source": "GPT 2.3 — Contenu (Business 180, V1)",
+  "role": "skill",
+  "description": "Produit les contenus à partir du calendrier : captions, carrousels, scripts vidéo, briefs visuels, adaptation multiplateforme, statuts de production et QA.",
+  "keywords": ["contenu", "post", "caption", "carrousel", "script", "reel", "texte", "brief visuel", "rédige", "écris", "publication"],
+  "always_loaded": false
+}

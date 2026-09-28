@@ -1,0 +1,9 @@
+{
+  "id": "calendrier",
+  "name": "Calendrier éditorial",
+  "source": "GPT 2.2 — Content Planner",
+  "role": "skill",
+  "description": "Transforme la stratégie en calendrier éditorial : piliers, sujets, angles, hooks, formats, plateformes, CTA, dates, actifs nécessaires, priorités de production.",
+  "keywords": ["calendrier", "planning", "éditorial", "quoi publier", "semaine", "mois", "piliers", "fréquence", "échéance", "programmation des posts"],
+  "always_loaded": false
+}

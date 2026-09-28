@@ -1,0 +1,9 @@
+{
+  "id": "media-buying",
+  "name": "Media Buying / Performance campagnes",
+  "source": "MARKOVA — Campaign / Media Buying Engine (rédigé pour compléter GPT 2.4)",
+  "role": "skill",
+  "description": "Analyse des campagnes payantes : calcul des KPI, suffisance des données, diagnostic, fatigue créative, budget, scaling, tests, matrice de décision et actions soumises à validation.",
+  "keywords": ["campagne", "meta ads", "budget", "cpl", "cpa", "cpm", "ctr", "cpc", "roas", "fréquence", "pause", "performance", "optimiser", "audience", "ciblage", "scaling", "gestionnaire de publicités"],
+  "always_loaded": false
+}

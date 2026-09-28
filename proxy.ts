@@ -22,7 +22,8 @@ export async function proxy(request: NextRequest) {
 
   const { data } = await supabase.auth.getUser();
   const path = request.nextUrl.pathname;
-  const isPublic = path.startsWith("/login");
+  // Pages publiques : connexion + pages légales exigées par Meta / Google.
+  const isPublic = path.startsWith("/login") || path.startsWith("/confidentialite") || path.startsWith("/suppression-donnees");
 
   if (!data.user && !isPublic) {
     if (path.startsWith("/api/")) {
@@ -32,7 +33,7 @@ export async function proxy(request: NextRequest) {
     url.pathname = "/login";
     return NextResponse.redirect(url);
   }
-  if (data.user && isPublic) {
+  if (data.user && path.startsWith("/login")) {
     const url = request.nextUrl.clone();
     url.pathname = "/";
     return NextResponse.redirect(url);

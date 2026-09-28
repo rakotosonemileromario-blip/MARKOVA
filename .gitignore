@@ -11,3 +11,6 @@ npm-debug.log*
 
 # Références de design (volumineuses, inutiles en production)
 stitch_*.zip
+
+# Archives locales
+markova.zip

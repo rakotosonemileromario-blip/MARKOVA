@@ -3,16 +3,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "./ui";
 
-// Graphiques et tuiles KPI insérés par l'agent dans ses réponses (blocs ```chart et ```kpi).
-// Palette catégorielle validée (script dataviz) sur la surface #12151b : ordre fixe, jamais cyclé, 6 séries max.
-const SERIES = ["#6d73f5", "#d95926", "#0f9e8e", "#c98500", "#d55181", "#9085e9"];
+// Graphiques et tuiles KPI insérés par l'agent dans ses réponses (blocs ```chart et ```kpi), façon Excel :
+// histogramme (colonnes), barres, courbe, aire, secteurs (camembert), anneau, colonnes empilées.
+// Couleurs vives demandées par l'utilisateur (bleu, jaune, vert, rouge, violet, orange), lisibles sur fond sombre.
+const SERIES = ["#60a5fa", "#facc15", "#4ade80", "#fb7185", "#c084fc", "#fb923c"];
 const INK = "#f3f4f6";
 const MUTED = "#9ca3af";
 const GRID = "#262b36";
 const SURFACE = "#12151b";
 
 export type ChartSpec = {
-  type: "bar" | "line" | "area" | "donut";
+  type: "column" | "bar" | "stacked" | "line" | "area" | "pie" | "donut";
   title?: string;
   subtitle?: string;
   unit?: string;
@@ -300,6 +301,161 @@ function Line({ spec, area }: { spec: ChartSpec; area: boolean }) {
   );
 }
 
+// ─── Histogramme : colonnes verticales, groupées ou empilées (comme Excel) ──
+function Columns({ spec, stacked }: { spec: ChartSpec; stacked: boolean }) {
+  const [ref, width] = useWidth();
+  const [hover, setHover] = useState<{ i: number; s: number } | null>(null);
+  const h = 250;
+  const n = spec.labels.length;
+  const rotate = n > 6 || spec.labels.some((l) => l.length > 12);
+  const pad = { l: 46, r: 10, t: 22, b: rotate ? 64 : 30 };
+  const single = spec.series.length === 1;
+  const totals = spec.labels.map((_, i) => spec.series.reduce((a, s) => a + Math.max(0, s.data[i] ?? 0), 0));
+  const max = stacked ? Math.max(0, ...totals) : Math.max(0, ...spec.series.flatMap((s) => s.data.map((v) => v ?? 0)));
+  const ticks = niceTicks(max, 4);
+  const top = ticks[ticks.length - 1] || 1;
+  const plotW = width - pad.l - pad.r;
+  const slot = plotW / Math.max(1, n);
+  const groupW = slot * 0.72;
+  const barW = stacked || single ? groupW : groupW / spec.series.length;
+  const y = (v: number) => pad.t + (1 - v / top) * (h - pad.t - pad.b);
+  // Une seule série : chaque colonne a sa couleur (« varier les couleurs par point », comme Excel).
+  const color = (i: number, s: number) => (single ? SERIES[i % SERIES.length] : SERIES[s]);
+
+  return (
+    <div ref={ref} className="relative">
+      <svg width={width} height={h} className="block overflow-visible" onMouseLeave={() => setHover(null)}>
+        {ticks.map((t) => (
+          <g key={t}>
+            <line x1={pad.l} x2={width - pad.r} y1={y(t)} y2={y(t)} stroke={GRID} strokeWidth={1} />
+            <text x={pad.l - 8} y={y(t) + 4} textAnchor="end" fontSize={11} fill={MUTED} className="tabular-nums">
+              {fmt(t)}
+            </text>
+          </g>
+        ))}
+        {spec.labels.map((label, i) => {
+          const x0 = pad.l + i * slot + (slot - groupW) / 2;
+          let base = 0;
+          return (
+            <g key={label + i}>
+              {spec.series.map((s, si) => {
+                const v = Math.max(0, s.data[i] ?? 0);
+                const x = stacked || single ? x0 : x0 + si * barW;
+                const yTop = y(base + v);
+                const hBar = y(base) - yTop;
+                if (stacked) base += v;
+                const active = hover?.i === i && hover?.s === si;
+                return (
+                  <rect
+                    key={s.name}
+                    x={x + 1}
+                    y={yTop}
+                    width={Math.max(2, barW - 2)}
+                    height={Math.max(0, hBar)}
+                    rx={stacked ? 0 : 4}
+                    fill={color(i, si)}
+                    opacity={hover && !active ? 0.55 : 1}
+                    className="col-grow"
+                    style={{ ["--i" as string]: i, filter: `drop-shadow(0 0 8px ${color(i, si)}55)` }}
+                    onMouseEnter={() => setHover({ i, s: si })}
+                  />
+                );
+              })}
+              {/* Valeur au-dessus de la colonne (total si empilé) */}
+              {(single || stacked) && (
+                <text x={x0 + groupW / 2} y={y(stacked ? totals[i] : Math.max(0, spec.series[0].data[i] ?? 0)) - 6} textAnchor="middle" fontSize={11} fontWeight={600} fill={INK} className="fade-in tabular-nums" style={{ ["--d" as string]: "0.9s" }}>
+                  {fmt(stacked ? totals[i] : spec.series[0].data[i], spec.unit)}
+                </text>
+              )}
+              <text
+                x={x0 + groupW / 2}
+                y={h - pad.b + 16}
+                textAnchor={rotate ? "end" : "middle"}
+                fontSize={11}
+                fill={MUTED}
+                transform={rotate ? `rotate(-35 ${x0 + groupW / 2} ${h - pad.b + 16})` : undefined}
+              >
+                {label.length > 22 ? `${label.slice(0, 21)}…` : label}
+              </text>
+            </g>
+          );
+        })}
+        <line x1={pad.l} x2={width - pad.r} y1={y(0)} y2={y(0)} stroke={MUTED} strokeOpacity={0.5} />
+      </svg>
+      {hover && (
+        <div className="pointer-events-none absolute z-10 rounded-md bg-elev border border-line px-2.5 py-1.5 text-[11px] text-ink shadow-xl" style={{ left: Math.min(Math.max(pad.l + hover.i * slot - 30, 0), width - 170), top: 0 }}>
+          <div className="font-semibold">{spec.labels[hover.i]}</div>
+          <div className="flex items-center gap-1.5">
+            <span className="size-2 rounded-sm" style={{ background: color(hover.i, hover.s) }} />
+            {spec.series.length > 1 && <span className="text-muted">{spec.series[hover.s].name}</span>}
+            <strong className="ml-auto pl-3 tabular-nums">{fmt(spec.series[hover.s].data[hover.i], spec.unit)}</strong>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Secteurs (camembert plein) ──────────────────────────────────
+function Pie({ spec }: { spec: ChartSpec }) {
+  const values = spec.series[0]?.data.map((v) => Math.max(0, v ?? 0)) ?? [];
+  const total = values.reduce((a, b) => a + b, 0) || 1;
+  const [hover, setHover] = useState<number | null>(null);
+  const R = 84;
+  const c = 100;
+  let angle = -Math.PI / 2;
+  const slices = values.map((v, i) => {
+    const a0 = angle;
+    const a1 = angle + (v / total) * Math.PI * 2;
+    angle = a1;
+    const mid = (a0 + a1) / 2;
+    const large = a1 - a0 > Math.PI ? 1 : 0;
+    const p = (a: number, r = R) => `${(c + r * Math.cos(a)).toFixed(2)},${(c + r * Math.sin(a)).toFixed(2)}`;
+    const d = values.filter((x) => x > 0).length === 1 && v > 0 ? `M${c - R},${c} a${R},${R} 0 1,0 ${2 * R},0 a${R},${R} 0 1,0 ${-2 * R},0` : `M${c},${c} L${p(a0)} A${R},${R} 0 ${large} 1 ${p(a1)} Z`;
+    return { d, mid, pct: (v / total) * 100, color: SERIES[i % SERIES.length], i };
+  });
+
+  return (
+    <div className="flex flex-col sm:flex-row items-center gap-5">
+      <svg width={200} height={200} viewBox="0 0 200 200" className="donut-in shrink-0">
+        {slices.map((s) => (
+          <path
+            key={s.i}
+            d={s.d}
+            fill={s.color}
+            stroke={SURFACE}
+            strokeWidth={2}
+            onMouseEnter={() => setHover(s.i)}
+            onMouseLeave={() => setHover(null)}
+            style={{
+              transform: hover === s.i ? `translate(${Math.cos(s.mid) * 6}px, ${Math.sin(s.mid) * 6}px)` : undefined,
+              transition: "transform 0.2s",
+              filter: `drop-shadow(0 0 6px ${s.color}55)`,
+            }}
+          />
+        ))}
+        {slices.map((s) =>
+          s.pct >= 7 ? (
+            <text key={`t${s.i}`} x={c + R * 0.62 * Math.cos(s.mid)} y={c + R * 0.62 * Math.sin(s.mid) + 4} textAnchor="middle" fontSize={12} fontWeight={700} fill="#0b0d11" className="pointer-events-none">
+              {Math.round(s.pct)} %
+            </text>
+          ) : null,
+        )}
+      </svg>
+      <ul className="w-full space-y-1.5">
+        {values.map((v, i) => (
+          <li key={i} className={`flex items-center gap-2 rounded-md px-2 py-1 text-[12px] reveal ${hover === i ? "bg-soft" : ""}`} style={{ ["--i" as string]: i }} onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)}>
+            <span className="size-2.5 rounded-full shrink-0" style={{ background: SERIES[i % SERIES.length] }} />
+            <span className="flex-1 truncate text-ink">{spec.labels[i]}</span>
+            <span className="tabular-nums text-ink">{fmt(v, spec.unit)}</span>
+            <span className="w-10 text-right tabular-nums text-muted">{Math.round((v / total) * 100)} %</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 // ─── Anneau (répartition) ────────────────────────────────────────
 function Donut({ spec }: { spec: ChartSpec }) {
   const values = spec.series[0]?.data.map((v) => Math.max(0, v ?? 0)) ?? [];
@@ -402,10 +558,30 @@ export function ChartBlock({ raw }: { raw: string }) {
     return <Preparing label="Graphique en préparation…" />;
   }
   // Une seule échelle : 6 séries max (ordre fixe de la palette).
-  const clean: ChartSpec = { ...spec, series: spec.series.slice(0, 6).map((s) => ({ ...s, data: s.data.map((v) => (v == null ? null : Number(v))) })) };
+  const clean: ChartSpec = {
+    ...spec,
+    type: chartType(spec.type, spec.labels.length),
+    series: spec.series.slice(0, 6).map((s) => ({ ...s, data: s.data.map((v) => (v == null ? null : Number(v))) })),
+  };
+  if (clean.type === "pie") return <Frame spec={clean} legend={false}><Pie spec={clean} /></Frame>;
   if (clean.type === "donut") return <Frame spec={clean} legend={false}><Donut spec={clean} /></Frame>;
   if (clean.type === "line" || clean.type === "area") return <Frame spec={clean} legend><Line spec={clean} area={clean.type === "area"} /></Frame>;
+  if (clean.type === "column" || clean.type === "stacked") return <Frame spec={clean} legend><Columns spec={clean} stacked={clean.type === "stacked"} /></Frame>;
   return <Frame spec={clean} legend><Bars spec={clean} /></Frame>;
+}
+
+/** Noms de graphiques acceptés (français / anglais / Excel) → type interne. */
+function chartType(raw: unknown, n: number): ChartSpec["type"] {
+  const t = String(raw ?? "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  if (/pie|camembert|secteur|cercle|circulaire/.test(t)) return "pie";
+  if (/donut|anneau|doughnut/.test(t)) return "donut";
+  if (/stack|empil/.test(t)) return "stacked";
+  if (/area|aire/.test(t)) return "area";
+  if (/line|courbe|evolution/.test(t)) return "line";
+  if (/column|colonne|histogram|vertical/.test(t)) return "column";
+  // « bar » : colonnes verticales comme Excel, sauf demande explicite d'horizontal ou beaucoup de catégories.
+  if (/bar|barre|horizontal/.test(t)) return t.includes("horizontal") || t === "hbar" || n > 10 ? "bar" : "column";
+  return "column";
 }
 
 export function KpiBlock({ raw }: { raw: string }) {

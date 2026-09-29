@@ -61,6 +61,17 @@ export default function MetaConnect({ connected, appReady, appFromEnv, openPicke
               Déconnecter
             </button>
           </div>
+          {appReady && (
+            <div className="mt-3 rounded-lg border border-line bg-soft/60 px-3 py-2.5 text-[12px] text-muted">
+              <strong className="text-ink">📈 Portée, statistiques de page et commentaires</strong> : dans developers.facebook.com → ton app → Cas
+              d'utilisation → « Gérer tout sur votre Page » → Personnaliser, ajoute <code>read_insights</code>, <code>pages_read_user_content</code> et{" "}
+              <code>instagram_manage_insights</code>, puis{" "}
+              <a href="/api/meta/connect?avance=1" className="text-accent-text font-semibold underline underline-offset-2">
+                reconnecte avec les statistiques
+              </a>
+              .
+            </div>
+          )}
           <AssetPicker initiallyOpen={openPicker} />
         </>
       ) : appReady ? (

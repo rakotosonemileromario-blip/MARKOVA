@@ -493,3 +493,18 @@ main h1 {
 .md tbody tr:nth-child(even) { background: rgba(255, 255, 255, 0.025); }
 .md blockquote { border-color: rgba(250, 204, 21, 0.35); background: rgba(250, 204, 21, 0.07); }
 .md strong { color: #fde68a; }
+
+/* Colonnes d'histogramme qui montent depuis l'axe */
+.col-grow {
+  transform-box: fill-box;
+  transform-origin: center bottom;
+  animation: col-grow 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation-delay: calc(var(--i, 0) * 70ms);
+  transition: opacity 0.2s;
+}
+@keyframes col-grow {
+  from { transform: scaleY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .col-grow { animation: none; }
+}

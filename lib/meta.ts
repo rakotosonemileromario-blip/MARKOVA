@@ -17,6 +17,19 @@ export const META_SCOPES = [
   "instagram_basic",
 ];
 
+/**
+ * Autorisations « avancées » (portée organique, statistiques de page, commentaires, statistiques Instagram).
+ * Elles ne sont demandées que sur « Reconnecter avec les statistiques » : il faut d'abord les ajouter
+ * aux cas d'utilisation de l'app Meta, sinon Facebook affiche « Invalid Scopes ».
+ */
+export const META_ADVANCED_SCOPES = ["read_insights", "pages_read_user_content", "instagram_manage_insights"];
+
+/** Explication donnée à l'agent (et à l'utilisateur) quand une autorisation Meta manque. */
+export const META_PERMISSION_FIX =
+  "Pour débloquer : 1) developers.facebook.com → app MARKOVA → « Cas d'utilisation » → « Gérer tout sur votre Page » (et « Instagram » si besoin) → Personnaliser → ajouter read_insights, pages_read_user_content et instagram_manage_insights ; " +
+  "2) dans MARKOVA → Connexions → « Reconnecter avec les statistiques ». En mode Développement, aucune validation Meta n'est nécessaire pour l'administrateur de l'app. " +
+  "Ne donne PAS d'autres étapes (Business Manager, App Review…).";
+
 // ─── App Meta (obligatoire pour « Connecter avec Facebook ») ─────
 // Soit dans .env.local (META_APP_ID / META_APP_SECRET / META_CONFIG_ID),
 // soit saisie dans MARKOVA (Connexions) et stockée chiffrée (integrations, provider « meta_app »).
@@ -42,7 +55,7 @@ export async function verifyMetaApp(app: MetaApp) {
   await graph<{ access_token: string }>("oauth/access_token", "", { client_id: app.id, client_secret: app.secret, grant_type: "client_credentials" });
 }
 
-export function metaAuthUrl(origin: string, state: string, app: MetaApp) {
+export function metaAuthUrl(origin: string, state: string, app: MetaApp, advanced = false) {
   const p = new URLSearchParams({
     client_id: app.id,
     redirect_uri: `${origin}/api/meta/callback`,
@@ -52,7 +65,7 @@ export function metaAuthUrl(origin: string, state: string, app: MetaApp) {
   // « Facebook Login for Business » : les permissions sont définies dans une configuration (config_id).
   // Sans configuration : Facebook Login classique avec la liste des permissions.
   if (app.configId) p.set("config_id", app.configId);
-  else p.set("scope", META_SCOPES.join(","));
+  else p.set("scope", [...META_SCOPES, ...(advanced ? META_ADVANCED_SCOPES : [])].join(","));
   return `https://www.facebook.com/${META_VERSION()}/dialog/oauth?${p}`;
 }
 
@@ -69,7 +82,9 @@ async function graph<T>(path: string, token: string, params: Record<string, stri
   if (!res.ok || json.error) {
     const e = json.error;
     if (e?.code === 190) throw new Error("jeton Meta expiré ou révoqué — reconnecte Meta dans Connexions");
-    if (e?.code === 200 || e?.code === 10) throw new Error(`permission Meta manquante : ${e.message}`);
+    if (e?.code === 200 || e?.code === 10 || /permission|Public Content Access/i.test(e?.message ?? "")) {
+      throw new Error(`autorisation Meta manquante (${e?.message}). ${META_PERMISSION_FIX}`);
+    }
     if (e?.code === 17 || e?.code === 4 || e?.code === 80004) throw new Error("limite d'appels Meta atteinte, réessaie dans quelques minutes");
     throw new Error(`Meta : ${e?.message ?? `HTTP ${res.status}`}`);
   }
@@ -342,23 +357,108 @@ async function pickPage(s: MetaSession, wanted?: unknown) {
   return (w && all.find((p) => p.name.toLowerCase().includes(w) || p.instagram_business_account?.username?.toLowerCase().includes(w.replace(/^@/, "")))) || all[0];
 }
 
+type FbPost = {
+  id: string; message?: string; created_time: string; permalink_url?: string; status_type?: string;
+  shares?: { count: number }; reactions?: { summary: { total_count: number } }; comments?: { summary: { total_count: number } };
+};
+
+const isPermissionError = (err: unknown) => err instanceof Error && err.message.startsWith("autorisation Meta manquante");
+
 async function facebookPosts(s: MetaSession, args: Record<string, unknown>) {
   const page = await pickPage(s, args.page);
-  const r = await graph<{ data: { id: string; message?: string; created_time: string; permalink_url?: string; shares?: { count: number }; reactions?: { summary: { total_count: number } }; comments?: { summary: { total_count: number } } }[] }>(
-    `${page.id}/posts`,
-    page.access_token,
-    { fields: "message,created_time,permalink_url,shares,reactions.summary(true).limit(0),comments.summary(true).limit(0)", limit: String(Math.min(Number(args.max ?? 15), 50)) },
-  );
-  const posts = r.data ?? [];
+  const limit = String(Math.min(Number(args.max ?? 15), 50));
+  // Du plus complet au plus simple : le nombre de commentaires exige pages_read_user_content,
+  // les réactions exigent pages_read_engagement. On garde ce qui est autorisé.
+  const attempts = [
+    "message,created_time,permalink_url,status_type,shares,reactions.summary(true).limit(0),comments.summary(true).limit(0)",
+    "message,created_time,permalink_url,status_type,shares,reactions.summary(true).limit(0)",
+    "message,created_time,permalink_url,status_type,shares",
+  ];
+  let posts: FbPost[] = [];
+  let missing = "";
+  for (const [i, fields] of attempts.entries()) {
+    try {
+      posts = (await graph<{ data: FbPost[] }>(`${page.id}/published_posts`, page.access_token, { fields, limit })).data ?? [];
+      if (i > 0) missing = i === 1 ? "nombre de commentaires" : "réactions et commentaires";
+      break;
+    } catch (err) {
+      if (!isPermissionError(err) || i === attempts.length - 1) throw err;
+    }
+  }
   if (!posts.length) return `Aucune publication récente sur ${page.name}.`;
+
+  // Portée par publication (read_insights) : tentée une fois, ignorée si l'autorisation manque.
+  const reach = new Map<string, number>();
+  let reachNote = "";
+  const postReach = async (id: string) => {
+    const ins = await graph<{ data: { name: string; values: { value: number }[] }[] }>(`${id}/insights`, page.access_token, { metric: "post_impressions_unique" });
+    const v = ins.data?.[0]?.values?.[0]?.value;
+    if (typeof v === "number") reach.set(id, v);
+  };
+  try {
+    const [first, ...rest] = posts.slice(0, 25);
+    await postReach(first.id); // si l'autorisation manque, on s'arrête là
+    await Promise.all(rest.map((p) => postReach(p.id).catch(() => {})));
+  } catch (err) {
+    reachNote = isPermissionError(err) ? "portée par publication" : "";
+  }
+  const lacking = [missing, reachNote].filter(Boolean).join(", ");
+
   return (
     `Page Facebook « ${page.name} » — ${posts.length} publications récentes :\n` +
     posts
       .map(
         (p) =>
-          `- ${p.created_time.slice(0, 10)} · réactions ${p.reactions?.summary.total_count ?? 0} · commentaires ${p.comments?.summary.total_count ?? 0} · partages ${p.shares?.count ?? 0}\n  ${(p.message ?? "(sans texte)").replace(/\s+/g, " ").slice(0, 300)}${p.permalink_url ? `\n  ${p.permalink_url}` : ""}`,
+          `- ${p.created_time.slice(0, 10)}${p.status_type ? ` · ${p.status_type}` : ""}${reach.has(p.id) ? ` · portée ${reach.get(p.id)}` : ""} · réactions ${p.reactions?.summary.total_count ?? "—"} · commentaires ${p.comments?.summary.total_count ?? "—"} · partages ${p.shares?.count ?? 0}\n  ${(p.message ?? "(sans texte)").replace(/\s+/g, " ").slice(0, 300)}${p.permalink_url ? `\n  ${p.permalink_url}` : ""}`,
       )
-      .join("\n")
+      .join("\n") +
+    (lacking ? `\n\n_Non disponible avec les autorisations actuelles : ${lacking}. ${META_PERMISSION_FIX}_` : "")
+  );
+}
+
+/** Pages Facebook et comptes Instagram connectés (ceux choisis dans Connexions). */
+async function listPages(s: MetaSession) {
+  const all = await pages(s);
+  if (!all.length) return "Aucune page Facebook accessible avec cette connexion (vérifie le choix des pages dans Connexions).";
+  const details = await Promise.all(
+    all.map(async (p) => {
+      const info = await graph<{ fan_count?: number; followers_count?: number; category?: string }>(p.id, p.access_token, { fields: "fan_count,followers_count,category" }).catch(() => null);
+      return `- **${p.name}** · id ${p.id}${info?.category ? ` · ${info.category}` : ""}${info?.followers_count != null ? ` · ${info.followers_count} abonnés` : ""}${info?.fan_count != null ? ` · ${info.fan_count} mentions J'aime` : ""}${p.instagram_business_account ? ` · Instagram @${p.instagram_business_account.username ?? p.instagram_business_account.id}` : " · pas d'Instagram pro relié"}`;
+    }),
+  );
+  return `${all.length} page(s) connectée(s) :\n${details.join("\n")}`;
+}
+
+/** Statistiques d'une page sur une période (read_insights). */
+async function pageInsights(s: MetaSession, args: Record<string, unknown>) {
+  const page = await pickPage(s, args.page);
+  const days = Math.min(Math.max(Number(args.jours ?? 28), 1), 90);
+  const until = Math.floor(Date.now() / 1000);
+  const since = until - days * 86_400;
+  const metrics = ["page_impressions_unique", "page_post_engagements", "page_views_total", "page_fan_adds", "page_daily_follows_unique"];
+  const rows: string[] = [];
+  for (const metric of metrics) {
+    try {
+      const r = await graph<{ data: { name: string; values: { value: number; end_time: string }[] }[] }>(`${page.id}/insights`, page.access_token, {
+        metric,
+        period: "day",
+        since: String(since),
+        until: String(until),
+      });
+      const values = r.data?.[0]?.values ?? [];
+      if (!values.length) continue;
+      const total = values.reduce((a, v) => a + (typeof v.value === "number" ? v.value : 0), 0);
+      const series = values.map((v) => `${v.end_time.slice(5, 10)}:${v.value}`).join(" ");
+      rows.push(`- ${metric} : total ${total} (par jour ${series})`);
+    } catch (err) {
+      if (isPermissionError(err)) throw err;
+      // métrique indisponible pour cette page : on continue
+    }
+  }
+  if (!rows.length) return `Aucune statistique disponible pour ${page.name} sur ${days} jours.`;
+  return (
+    `Statistiques de la page « ${page.name} » — ${days} derniers jours ` +
+    `(page_impressions_unique = portée organique + payante, page_post_engagements = interactions, page_views_total = vues de la page, page_fan_adds / page_daily_follows_unique = nouveaux abonnés) :\n${rows.join("\n")}`
   );
 }
 
@@ -426,10 +526,22 @@ export const META_TOOLS: ToolSet["defs"] = [
     },
   },
   {
+    name: "meta_pages",
+    label: "📄 Pages connectées",
+    description: "Liste les pages Facebook connectées à MARKOVA (nom, id, abonnés, catégorie) et le compte Instagram pro relié à chacune. À appeler quand l'utilisateur demande ses pages, ou avant d'en choisir une.",
+    parameters: { type: "object", properties: {} },
+  },
+  {
     name: "facebook_publications",
     label: "👍 Publications Facebook",
-    description: "Publications récentes d'une page Facebook avec réactions, commentaires et partages.",
+    description: "Publications récentes d'une page Facebook : texte, type, réactions, commentaires, partages et portée (si autorisée).",
     parameters: { type: "object", properties: { page: { type: "string", description: "Nom de la page (défaut : la première)" }, max: { type: "number" } } },
+  },
+  {
+    name: "facebook_statistiques",
+    label: "📈 Statistiques de page",
+    description: "Statistiques d'une page Facebook sur N jours : portée, interactions, vues de la page, nouveaux abonnés, jour par jour.",
+    parameters: { type: "object", properties: { page: { type: "string" }, jours: { type: "number", description: "1–90, défaut 28" } } },
   },
   {
     name: "instagram_publications",
@@ -447,8 +559,12 @@ export async function runMetaTool(s: MetaSession, name: string, args: Record<str
       return performances(s, args);
     case "meta_creatifs":
       return creatives(s, args);
+    case "meta_pages":
+      return listPages(s);
     case "facebook_publications":
       return facebookPosts(s, args);
+    case "facebook_statistiques":
+      return pageInsights(s, args);
     case "instagram_publications":
       return instagramPosts(s, args);
     default:

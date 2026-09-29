@@ -55,9 +55,17 @@ COLLECTER → COMPRENDRE → ANALYSER → CROISER LES DONNÉES → DÉTECTER →
 [{"label": "CPL moyen", "value": 14.91, "unit": "€", "delta": "+23 % vs sem. préc.", "good": false}, {"label": "Leads", "value": 49}]
 \`\`\`
   « good » = true si l'évolution est favorable, false si défavorable, absent si neutre. « delta » seulement s'il est connu.
-- **Comparaison** entre éléments (campagnes, pubs, canaux) → type "bar" ; **évolution dans le temps** → "line" (ou "area") ; **répartition** d'un total (budget, sources de leads) → "donut" (une seule série) :
+- Types disponibles (comme dans Excel) — choisis celui qui montre le mieux l'idée, et **varie** : plusieurs graphiques de types différents dans une même analyse, c'est bien.
+  - "column" : **histogramme** (colonnes verticales) → comparer des éléments (campagnes, pubs, pages, jours de la semaine) ;
+  - "stacked" : **colonnes empilées** → composition de chaque élément (ex. dépenses par campagne et par plateforme) ;
+  - "bar" : barres horizontales → longs noms ou plus de 10 éléments ;
+  - "line" : **courbe** → évolution dans le temps ; "area" : aire → volume dans le temps ;
+  - "pie" : **camembert / diagramme circulaire** → répartition d'un total (budget, sources de leads, formats) ; "donut" : anneau, même usage avec le total au centre.
 \`\`\`chart
-{"type": "bar", "title": "CPL par campagne (7 derniers jours)", "unit": "€", "labels": ["Vidéo hook", "Carrousel logo"], "series": [{"name": "CPL", "data": [11.07, 28.18]}]}
+{"type": "column", "title": "CPL par campagne (7 derniers jours)", "unit": "€", "labels": ["Vidéo hook", "Carrousel logo", "Retargeting"], "series": [{"name": "CPL", "data": [11.07, 28.18, 9.4]}]}
+\`\`\`
+\`\`\`chart
+{"type": "pie", "title": "Répartition du budget (30 derniers jours)", "unit": "€", "labels": ["Prospection", "Retargeting", "Notoriété"], "series": [{"name": "Dépenses", "data": [420, 180, 95]}]}
 \`\`\`
 Règles : JSON valide sur une ligne ; valeurs numériques exactes (issues des données, jamais inventées) ; une seule unité par graphique (deux mesures d'unités différentes = deux graphiques) ; 6 séries maximum ; un titre qui dit ce qu'on voit et la période. Pas de graphique pour 1 ou 2 chiffres isolés (utilise kpi), ni pour du contenu rédactionnel.
 
@@ -181,7 +189,8 @@ export function buildSystemPrompt(opts: {
     parts.push(
       `## Meta connecté (${meta.name}) — Meta Ads · Facebook · Instagram\n` +
         `- Pour toute question sur les campagnes, publicités, budget, CPL, CTR, ROAS : appelle \`meta_performances\` (niveau campagne, puis ensemble ou publicité si besoin d'aller plus loin) au lieu de demander des chiffres. Les KPI renvoyés sont exacts : utilise-les tels quels.\n` +
-        `- Pour analyser les messages, hooks et CTA : \`meta_creatifs\`. Réseaux sociaux organiques : \`facebook_publications\`, \`instagram_publications\`.\n` +
+        `- Pour analyser les messages, hooks et CTA : \`meta_creatifs\`. Réseaux sociaux organiques : \`meta_pages\` (liste des pages connectées et de leur Instagram — appelle-le dès que l'utilisateur parle de « mes pages » ou qu'une page n'est pas trouvée), \`facebook_publications\`, \`facebook_statistiques\` (portée, interactions, abonnés sur N jours), \`instagram_publications\`.\n` +
+        `- Si un outil répond « autorisation Meta manquante », continue avec les données disponibles, puis donne UNIQUEMENT la marche à suivre indiquée dans le message de l'outil (ne parle pas de Business Manager ni d'App Review, et ne fais pas de bloc 🔐 pour ça).\n` +
         `- Précise toujours la période analysée. Évalue la suffisance des données avant de conclure (volume, durée, phase d'apprentissage).\n` +
         `- Pause, réactivation, budget : uniquement via \`proposer_action\` (meta_pause, meta_activer, meta_budget) et seulement si les données et les règles de la mémoire le justifient. Ne rien proposer est une réponse valable.\n` +
         `- Dès que tu RECOMMANDES clairement une pause, une réactivation ou un changement de budget, appelle \`proposer_action\` dans la même réponse : l'utilisateur doit pouvoir confirmer d'un clic, sans avoir à le redemander.`,

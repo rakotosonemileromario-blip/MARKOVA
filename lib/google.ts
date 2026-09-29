@@ -108,10 +108,13 @@ export async function getGoogleSessions(supabase: SupabaseClient, opts: { timezo
         email: row.account_email as string,
         timezone: opts.timezone || row.timezone || "Europe/Paris",
         token: async () => {
-          const cached = accessCache.get(row.id);
+          // Clé liée au jeton de rafraîchissement : après « Mettre à jour les autorisations »,
+          // l'ancien jeton d'accès (sans les nouveaux droits) n'est plus réutilisé.
+          const key = `${row.id}:${String(row.refresh_token_enc).slice(-24)}`;
+          const cached = accessCache.get(key);
           if (cached && cached.exp > Date.now() + 60_000) return cached.token;
           const t = await tokenRequest(client, { refresh_token: decrypt(row.refresh_token_enc), grant_type: "refresh_token" });
-          accessCache.set(row.id, { token: t.access_token, exp: Date.now() + t.expires_in * 1000 });
+          accessCache.set(key, { token: t.access_token, exp: Date.now() + t.expires_in * 1000 });
           return t.access_token;
         },
       },

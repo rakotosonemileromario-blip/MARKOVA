@@ -508,3 +508,26 @@ main h1 {
 @media (prefers-reduced-motion: reduce) {
   .col-grow { animation: none; }
 }
+
+/* ─── Apparition au défilement (ScrollReveal) ─────────────────────── */
+.sr {
+  animation: none !important;
+  opacity: 0;
+  transform: translate3d(0, 28px, 0) scale(0.985);
+  filter: blur(4px);
+  transition:
+    opacity 0.6s cubic-bezier(0.2, 0.7, 0.2, 1),
+    transform 0.75s cubic-bezier(0.2, 0.7, 0.2, 1),
+    filter 0.6s ease;
+  will-change: opacity, transform;
+}
+.sr.sr-in {
+  opacity: 1;
+  transform: none;
+  filter: none;
+}
+/* Les graphiques repartent quand ils apparaissent : colonnes, courbes, anneaux. */
+.sr:not(.sr-in) .col-grow,
+.sr:not(.sr-in) .bar-grow,
+.sr:not(.sr-in) .line-draw,
+.sr:not(.sr-in) .donut-in { animation-play-state: paused; }

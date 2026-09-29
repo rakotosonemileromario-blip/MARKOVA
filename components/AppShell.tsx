@@ -7,6 +7,7 @@ import Sidebar, { isActive, newChat } from "./Sidebar";
 import { Icon, LogoMark } from "./ui";
 import ProjectSwitcher from "./ProjectSwitcher";
 import DeviceSync from "./DeviceSync";
+import ScrollReveal from "./ScrollReveal";
 import NotificationBell from "./NotificationBell";
 import { useTones } from "@/lib/tones";
 
@@ -46,6 +47,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="h-dvh flex">
       <DeviceSync />
+      <ScrollReveal />
       <Sidebar open={open} onClose={() => setOpen(false)} />
       <div className="flex-1 min-w-0 flex flex-col">
         {/* Barre du haut (mobile) */}

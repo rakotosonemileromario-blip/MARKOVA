@@ -22,11 +22,11 @@ export const META_SCOPES = [
  * Elles ne sont demandées que sur « Reconnecter avec les statistiques » : il faut d'abord les ajouter
  * aux cas d'utilisation de l'app Meta, sinon Facebook affiche « Invalid Scopes ».
  */
-export const META_ADVANCED_SCOPES = ["read_insights", "pages_read_user_content", "instagram_manage_insights"];
+export const META_ADVANCED_SCOPES = ["read_insights", "pages_read_user_content"];
 
 /** Explication donnée à l'agent (et à l'utilisateur) quand une autorisation Meta manque. */
 export const META_PERMISSION_FIX =
-  "Pour débloquer : 1) developers.facebook.com → app MARKOVA → « Cas d'utilisation » → « Gérer tout sur votre Page » (et « Instagram » si besoin) → Personnaliser → ajouter read_insights, pages_read_user_content et instagram_manage_insights ; " +
+  "Pour débloquer : 1) developers.facebook.com → app MARKOVA → « Cas d'utilisation » → « Gérer tout sur votre Page » → Personnaliser → ajouter read_insights et pages_read_user_content ; " +
   "2) dans MARKOVA → Connexions → « Reconnecter avec les statistiques ». En mode Développement, aucune validation Meta n'est nécessaire pour l'administrateur de l'app. " +
   "Ne donne PAS d'autres étapes (Business Manager, App Review…).";
 

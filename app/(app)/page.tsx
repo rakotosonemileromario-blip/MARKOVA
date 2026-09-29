@@ -3,7 +3,8 @@ import { createClient } from "@/lib/supabase/server";
 import { cookies } from "next/headers";
 import VoiceHero from "@/components/VoiceHero";
 import HomeStats from "@/components/HomeStats";
-import ProjectSwitcher from "@/components/ProjectSwitcher";
+import WelcomeClock from "@/components/WelcomeClock";
+import ProjectChips from "@/components/ProjectChips";
 import { Icon } from "@/components/ui";
 import { describeProjectRelations, getProjectContext, PROJECT_COOKIE } from "@/lib/projects";
 import { resolveTimezone, TZ_COOKIE } from "@/lib/timezone";
@@ -48,36 +49,35 @@ export default async function HomePage() {
   const relations = current ? describeProjectRelations(current, all) : "";
   const rules = mems.filter((m) => ["regle", "seuil", "objectif"].includes(m.category)).slice(0, 4);
   const googleAccounts = (google.data ?? []).map((g) => g.account_email as string);
-  const today = new Date().toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", timeZone });
+  const { data: auth } = await supabase.auth.getUser();
+  const userName = String(auth.user?.user_metadata?.name ?? "").trim() || "Mario";
 
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="mx-auto max-w-3xl px-4 py-5 space-y-6">
-        {/* En-tête */}
-        <div className="flex items-center justify-between reveal">
-          <div className="flex items-center gap-2 label-caps text-accent-text">
-            <span className="size-1.5 rounded-full bg-accent animate-pulse" /> Comprendre. Expliquer. Optimiser.
-          </div>
-          <span className="rounded border border-cyan/40 text-cyan px-1.5 h-5 inline-flex items-center gap-1 text-[10px] font-bold tracking-[0.08em] uppercase">
-            <span className="size-1.5 rounded-full bg-cyan animate-ping" /> En ligne
-          </span>
-        </div>
+        {/* Bienvenue + heure en temps réel */}
+        <WelcomeClock name={userName} />
 
-        {/* Espace de travail */}
-        <section className="card is-active p-4 bg-gradient-to-br from-soft to-panel z-30">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <h1 className="text-[26px] font-bold tracking-tight truncate flex items-center gap-1.5">
-                <span className="text-holo truncate">{workspace}</span>
-                <Icon name="verified" filled className="text-cyan text-[18px]" />
-              </h1>
-              <p className="text-[13px] text-muted">
+        {/* Choix du projet */}
+        <ProjectChips projects={all.map((p) => ({ id: p.id, name: p.name }))} currentId={pid} />
+
+        {/* Espace de travail actif */}
+        <section className="card is-active p-4 bg-gradient-to-br from-soft to-panel">
+          <div className="flex items-center gap-3">
+            <span className="grid place-items-center size-11 rounded-xl bg-accent-soft shrink-0">
+              <Icon name={current ? "folder_open" : "public"} filled className="text-[22px] text-accent-text" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="label-caps text-muted">Espace de travail</div>
+              <div className="text-[20px] font-bold tracking-tight truncate text-holo">{workspace}</div>
+              <p className="text-[12px] text-muted truncate">
                 {current?.description || (current ? "Projet" : "Mémoire commune à tous les projets")}
                 {relations && <span className="text-cyan"> · {relations}</span>}
               </p>
-              <p className="text-[12px] text-muted capitalize mt-0.5">{today}</p>
             </div>
-            <ProjectSwitcher variant="card" />
+            <span className="rounded border border-cyan/40 text-cyan px-1.5 h-5 inline-flex items-center gap-1 text-[10px] font-bold tracking-[0.08em] uppercase shrink-0">
+              <span className="size-1.5 rounded-full bg-cyan animate-ping" /> En ligne
+            </span>
           </div>
         </section>
 

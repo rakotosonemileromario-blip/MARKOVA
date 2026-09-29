@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Petite icône des notifications : le « M » de MARKOVA, monochrome (exigence Android). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp" android:viewportWidth="64" android:viewportHeight="64">
+    <path android:fillColor="#FFFFFFFF" android:pathData="M32,4 L40,17 L32,13 L24,17 Z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M21,19 L32,40 L32,44 L25,34 L16,52 L7,50 Z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M43,19 L32,40 L32,44 L39,34 L48,52 L57,50 Z" />
+</vector>

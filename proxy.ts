@@ -29,6 +29,8 @@ export async function proxy(request: NextRequest) {
     path.startsWith("/confidentialite") ||
     path.startsWith("/suppression-donnees") ||
     path.startsWith("/api/cron/") ||
+    path.startsWith("/.well-known/") || // preuve que l'APK Android appartient au site (plein écran)
+    path === "/manifest.webmanifest" ||
     path === "/sw.js";
 
   if (!data.user && !isPublic) {

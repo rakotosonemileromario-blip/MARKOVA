@@ -14,3 +14,12 @@ stitch_*.zip
 
 # Archives locales
 markova.zip
+
+# Android : clé de signature et fichiers de build (ne jamais publier la clé)
+android/*.jks
+android/keystore.properties
+android/local.properties
+android/.gradle/
+android/**/build/
+android/*.apk
+/MARKOVA.apk

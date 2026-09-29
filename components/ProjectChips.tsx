@@ -41,7 +41,7 @@ export default function ProjectChips({ projects, currentId }: { projects: P[]; c
           Tout voir ({projects.length}) →
         </Link>
       </div>
-      <div className="-mx-4 px-4 scroll-px-4 flex gap-2 overflow-x-auto pb-1 snap-x [scrollbar-width:none]">
+      <div className="-mx-4 px-4 scroll-px-4 flex gap-2 overflow-x-auto pb-1 snap-x [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {ordered.map((p, i) => {
           const active = (p?.id ?? null) === currentId;
           const tone = TONES[i % TONES.length];

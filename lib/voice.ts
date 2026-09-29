@@ -147,15 +147,30 @@ export function useSpeechToText(onFinal: (text: string) => void) {
       rec.current = r;
       r.lang = "fr-FR";
       r.interimResults = true;
-      r.continuous = true;
+      // Android : l'écoute continue répète les mêmes morceaux (« ok ok ok ») ; on écoute phrase par phrase,
+      // relancée automatiquement à chaque fin (voir onend), ce qui donne le même confort sans répétitions.
+      r.continuous = !mobile;
+      let session = ""; // texte validé de la session d'écoute en cours
       r.onresult = (e) => {
+        // On reconstruit tout le texte de la session à chaque événement (au lieu d'ajouter),
+        // en ignorant les résultats répétés ou cumulés que renvoient certains téléphones.
+        const finals: string[] = [];
         let interim = "";
-        for (let i = e.resultIndex; i < e.results.length; i++) {
-          const res = e.results[i];
-          if (res.isFinal) finalText.current += (finalText.current ? " " : "") + res[0].transcript.trim();
-          else interim += res[0].transcript;
+        for (let i = 0; i < e.results.length; i++) {
+          const t = e.results[i][0].transcript.trim();
+          if (!t) continue;
+          if (!e.results[i].isFinal) {
+            interim += (interim ? " " : "") + t;
+            continue;
+          }
+          const last = finals[finals.length - 1];
+          if (last && (t === last || last.startsWith(t))) continue;
+          if (last && t.startsWith(last)) finals[finals.length - 1] = t;
+          else finals.push(t);
         }
-        setTranscript(finalText.current + (interim ? " " + interim : ""));
+        session = finals.join(" ");
+        if (interim && session.endsWith(interim)) interim = "";
+        setTranscript([finalText.current, session, interim].filter(Boolean).join(" "));
       };
       r.onerror = (e) => {
         if (e.error === "not-allowed" || e.error === "service-not-allowed") {
@@ -169,6 +184,9 @@ export function useSpeechToText(onFinal: (text: string) => void) {
       };
       // Le navigateur coupe après un silence : on relance tant que l'utilisateur n'a pas appuyé sur stop.
       r.onend = () => {
+        // Fin d'une session : son texte rejoint le texte définitif (une seule fois).
+        if (session) finalText.current = [finalText.current, session].filter(Boolean).join(" ");
+        session = "";
         if (!userStopped.current) {
           try {
             return r.start();

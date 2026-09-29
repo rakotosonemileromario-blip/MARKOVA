@@ -8,26 +8,11 @@ export function Icon({ name, className = "", filled = false, style }: { name: st
   );
 }
 
-/** Monogramme MARKOVA : un « M » à facettes, indigo à gauche, cyan à droite. */
+/** Logo MARKOVA : l'illustration de l'utilisateur (public/logo.png, recadrée sur la tête). */
 export function LogoMark({ size = 32 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 64 64" aria-label="MARKOVA" role="img">
-      <defs>
-        <linearGradient id="mk-l" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#6366f1" />
-          <stop offset="1" stopColor="#4f46e5" />
-        </linearGradient>
-        <linearGradient id="mk-r" x1="1" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#22d3ee" />
-          <stop offset="1" stopColor="#0891b2" />
-        </linearGradient>
-      </defs>
-      <polygon points="32,4 40,17 32,13 24,17" fill="#6366f1" />
-      <polygon points="21,19 32,40 32,44 25,34 16,52 7,50" fill="url(#mk-l)" />
-      <polygon points="16,52 25,44 22,52" fill="#4338ca" />
-      <polygon points="43,19 32,40 32,44 39,34 48,52 57,50" fill="url(#mk-r)" />
-      <polygon points="48,52 39,44 42,52" fill="#0e7490" />
-    </svg>
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src="/logo.png" width={size} height={size} alt="MARKOVA" className="rounded-lg object-cover shrink-0" style={{ width: size, height: size }} />
   );
 }
 

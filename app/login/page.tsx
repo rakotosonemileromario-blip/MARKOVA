@@ -35,8 +35,8 @@ export default function LoginPage() {
             <span className="absolute top-2 left-2 opacity-70">
               <Orb size={96} />
             </span>
-            <span className="relative grid place-items-center size-20 rounded-full bg-bg/70 backdrop-blur border border-white/10">
-              <LogoMark size={52} />
+            <span className="relative grid place-items-center size-20 rounded-full overflow-hidden border-2 border-white/15 shadow-[0_0_30px_rgba(99,102,241,0.45)]">
+              <LogoMark size={80} />
             </span>
           </div>
           <div className="mt-4 text-[28px] font-bold tracking-tight text-holo">MARKOVA AI</div>

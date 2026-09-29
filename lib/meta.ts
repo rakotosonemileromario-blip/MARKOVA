@@ -350,11 +350,26 @@ async function pages(s: MetaSession) {
   return (r.data ?? []).filter((p) => !chosen?.length || chosen.includes(p.id));
 }
 
+/** « 𝙅𝙊𝙆𝙀𝙉𝘼𝙔 », « Jokénay » → « jokenay » : les noms de pages utilisent souvent des lettres stylisées. */
+const plainName = (s: string) =>
+  s.normalize("NFKC").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+
 async function pickPage(s: MetaSession, wanted?: unknown) {
   const all = await pages(s);
   if (!all.length) throw new Error("aucune page Facebook accessible");
-  const w = typeof wanted === "string" ? wanted.toLowerCase().trim() : "";
-  return (w && all.find((p) => p.name.toLowerCase().includes(w) || p.instagram_business_account?.username?.toLowerCase().includes(w.replace(/^@/, "")))) || all[0];
+  const w = typeof wanted === "string" ? plainName(wanted.replace(/^@/, "")) : "";
+  if (!w) return all[0];
+  const hit =
+    all.find((p) => plainName(p.name) === w) ??
+    all.find((p) => plainName(p.name).includes(w) || (p.instagram_business_account?.username && plainName(p.instagram_business_account.username).includes(w)));
+  if (!hit) throw new Error(`page « ${wanted} » introuvable. Pages connectées : ${all.map((p) => p.name).join(", ")}`);
+  return hit;
+}
+
+/** Autorisations réellement accordées à la connexion Meta. */
+async function grantedPermissions(s: MetaSession) {
+  const r = await graph<{ data: { permission: string; status: string }[] }>("me/permissions", s.token).catch(() => ({ data: [] }));
+  return new Set((r.data ?? []).filter((p) => p.status === "granted").map((p) => p.permission));
 }
 
 type FbPost = {
@@ -390,17 +405,16 @@ async function facebookPosts(s: MetaSession, args: Record<string, unknown>) {
   // Portée par publication (read_insights) : tentée une fois, ignorée si l'autorisation manque.
   const reach = new Map<string, number>();
   let reachNote = "";
+  // Meta a remplacé post_impressions_unique par post_total_media_view_unique (personnes qui ont vu la publication).
   const postReach = async (id: string) => {
-    const ins = await graph<{ data: { name: string; values: { value: number }[] }[] }>(`${id}/insights`, page.access_token, { metric: "post_impressions_unique" });
+    const ins = await graph<{ data: { name: string; values: { value: number }[] }[] }>(`${id}/insights`, page.access_token, { metric: "post_total_media_view_unique" });
     const v = ins.data?.[0]?.values?.[0]?.value;
     if (typeof v === "number") reach.set(id, v);
   };
-  try {
-    const [first, ...rest] = posts.slice(0, 25);
-    await postReach(first.id); // si l'autorisation manque, on s'arrête là
-    await Promise.all(rest.map((p) => postReach(p.id).catch(() => {})));
-  } catch (err) {
-    reachNote = isPermissionError(err) ? "portée par publication" : "";
+  if ((await grantedPermissions(s)).has("read_insights")) {
+    await Promise.all(posts.slice(0, 25).map((p) => postReach(p.id).catch(() => {})));
+  } else {
+    reachNote = "portée par publication (autorisation read_insights non accordée)";
   }
   const lacking = [missing, reachNote].filter(Boolean).join(", ");
 
@@ -432,10 +446,14 @@ async function listPages(s: MetaSession) {
 /** Statistiques d'une page sur une période (read_insights). */
 async function pageInsights(s: MetaSession, args: Record<string, unknown>) {
   const page = await pickPage(s, args.page);
+  if (!(await grantedPermissions(s)).has("read_insights")) {
+    throw new Error(`autorisation Meta manquante (read_insights non accordée : statistiques de page impossibles). ${META_PERMISSION_FIX}`);
+  }
   const days = Math.min(Math.max(Number(args.jours ?? 28), 1), 90);
   const until = Math.floor(Date.now() / 1000);
   const since = until - days * 86_400;
-  const metrics = ["page_impressions_unique", "page_post_engagements", "page_views_total", "page_fan_adds", "page_daily_follows_unique"];
+  // Métriques actuelles de Meta (les anciennes « impressions » ont été supprimées au profit des « vues »).
+  const metrics = ["page_total_media_view_unique", "page_media_view", "page_post_engagements", "page_views_total", "page_daily_follows_unique", "page_follows"];
   const rows: string[] = [];
   for (const metric of metrics) {
     try {
@@ -447,8 +465,15 @@ async function pageInsights(s: MetaSession, args: Record<string, unknown>) {
       });
       const values = r.data?.[0]?.values ?? [];
       if (!values.length) continue;
-      const total = values.reduce((a, v) => a + (typeof v.value === "number" ? v.value : 0), 0);
       const series = values.map((v) => `${v.end_time.slice(5, 10)}:${v.value}`).join(" ");
+      if (metric === "page_follows") {
+        // Cumul : on donne la valeur actuelle et l'évolution, pas une somme.
+        const first = Number(values[0].value) || 0;
+        const last = Number(values[values.length - 1].value) || 0;
+        rows.push(`- ${metric} : ${last} abonnés aujourd'hui (${last - first >= 0 ? "+" : ""}${last - first} sur la période ; par jour ${series})`);
+        continue;
+      }
+      const total = values.reduce((a, v) => a + (typeof v.value === "number" ? v.value : 0), 0);
       rows.push(`- ${metric} : total ${total} (par jour ${series})`);
     } catch (err) {
       if (isPermissionError(err)) throw err;
@@ -458,7 +483,7 @@ async function pageInsights(s: MetaSession, args: Record<string, unknown>) {
   if (!rows.length) return `Aucune statistique disponible pour ${page.name} sur ${days} jours.`;
   return (
     `Statistiques de la page « ${page.name} » — ${days} derniers jours ` +
-    `(page_impressions_unique = portée organique + payante, page_post_engagements = interactions, page_views_total = vues de la page, page_fan_adds / page_daily_follows_unique = nouveaux abonnés) :\n${rows.join("\n")}`
+    `(page_total_media_view_unique = personnes touchées / portée, page_media_view = vues des contenus, page_post_engagements = interactions, page_views_total = visites de la page, page_daily_follows_unique = nouveaux abonnés par jour, page_follows = total d'abonnés) :\n${rows.join("\n")}`
   );
 }
 

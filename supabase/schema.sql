@@ -180,7 +180,22 @@ create table if not exists public.push_subscriptions (
   created_at  timestamptz not null default now()
 );
 
+-- ─── Relances programmées (« rends-moi compte dans 3 h ») ───
+create table if not exists public.followups (
+  id               uuid primary key default gen_random_uuid(),
+  user_id          uuid not null default auth.uid() references auth.users on delete cascade,
+  conversation_id  uuid references public.conversations on delete cascade,
+  due_at           timestamptz not null,
+  instruction      text not null,                  -- ce que MARKOVA devra vérifier et rapporter
+  status           text not null default 'prevue' check (status in ('prevue', 'en_cours', 'faite', 'erreur', 'annulee')),
+  result           text,
+  created_at       timestamptz not null default now(),
+  done_at          timestamptz
+);
+create index if not exists followups_due on public.followups (status, due_at);
+
 -- ─── RLS ────────────────────────────────────────────────────────
+alter table public.followups          enable row level security;
 alter table public.user_settings      enable row level security;
 alter table public.watch_rules        enable row level security;
 alter table public.notifications      enable row level security;
@@ -198,7 +213,7 @@ do $$
 declare t text;
 begin
   foreach t in array array['projects', 'conversations', 'messages', 'memories', 'files', 'integrations', 'actions', 'custom_skills',
-                           'user_settings', 'watch_rules', 'notifications', 'push_subscriptions'] loop
+                           'user_settings', 'watch_rules', 'notifications', 'push_subscriptions', 'followups'] loop
     execute format('drop policy if exists "owner_all" on public.%I', t);
     execute format(
       'create policy "owner_all" on public.%I for all to authenticated

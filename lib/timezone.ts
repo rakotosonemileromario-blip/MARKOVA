@@ -16,6 +16,29 @@ export function isValidTimezone(tz: unknown): tz is string {
   }
 }
 
+/** Décalage (ms) du fuseau par rapport à UTC à un instant donné. */
+function offsetMs(tz: string, at: Date) {
+  const p = Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", { timeZone: tz, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" })
+      .formatToParts(at)
+      .map((x) => [x.type, x.value]),
+  );
+  return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second) - Math.floor(at.getTime() / 1000) * 1000;
+}
+
+/** « 2026-09-29T18:30 » exprimé dans le fuseau tz → instant UTC. */
+export function localToUtc(local: string, tz: string): Date | null {
+  const m = local.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/);
+  if (!m) return null;
+  const guess = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]);
+  const first = guess - offsetMs(tz, new Date(guess));
+  return new Date(guess - offsetMs(tz, new Date(first))); // 2e passe : changements d'heure
+}
+
+/** Date / heure lisible dans le fuseau. */
+export const formatLocal = (d: Date | string, tz: string) =>
+  new Date(d).toLocaleString("fr-FR", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: tz });
+
 /** Fuseau de l'appareil (cookie), sinon celui mémorisé, sinon Europe/Paris. */
 export async function resolveTimezone(supabase: SupabaseClient, cookieTz?: string | null, userId?: string): Promise<string> {
   if (isValidTimezone(cookieTz)) return cookieTz;

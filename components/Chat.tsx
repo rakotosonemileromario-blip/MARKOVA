@@ -11,7 +11,7 @@ import { Icon } from "./ui";
 import Orb from "./Orb";
 import ActionCards, { type ActionItem } from "./ActionCards";
 import { PROJECT_EVENT, setCurrentProjectId } from "@/lib/project-client";
-import { speak, stopSpeaking, useSpeechToText } from "@/lib/voice";
+import { speakSummary, stopSpeaking, useSpeechToText } from "@/lib/voice";
 
 export type Source = { title: string; uri: string };
 export type Msg = {
@@ -219,10 +219,10 @@ export default function Chat({
           }
         }
       }
-      // Question vocale : on lit le résumé d'actions (à défaut, la réponse complète).
+      // Question vocale : on lit uniquement un résumé (bloc vocal, sinon résumé demandé au serveur).
       if (opts.voice && full) {
         const { text: written, vocal } = splitProposals(full);
-        speak(vocal ?? written);
+        speakSummary(written, vocal);
       }
     } catch (err) {
       updateLast((m) => ({ ...m, meta: { ...m.meta, error: err instanceof Error ? err.message : String(err) } }));
@@ -329,7 +329,7 @@ export default function Chat({
             <div className="rounded-xl border border-danger/50 bg-soft p-3 reveal">
               <div className="flex items-center gap-3 label-caps text-danger">
                 <Orb size={26} state="listening" />
-                <span className="flex-1">{mic.state === "transcribing" ? "Transcription…" : "Je t'écoute — appuie sur Stop quand tu as fini"}</span>
+                <span className="flex-1">{mic.state === "transcribing" ? "Je vérifie ce que tu as dit…" : "Je t'écoute — appuie sur Stop quand tu as fini"}</span>
                 <span className="eq flex items-center h-5 text-danger" aria-hidden>
                   <span /><span /><span /><span /><span />
                 </span>
@@ -500,11 +500,11 @@ function Message({ msg, streaming }: { msg: Msg; streaming: boolean }) {
       {text && !streaming && (
         <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-muted">
           <button
-            onClick={() => speak(vocal ?? text)}
+            onClick={() => speakSummary(text, vocal)}
             className="inline-flex items-center gap-1 rounded-md bg-soft border border-line px-2 h-6 font-medium text-ink hover:border-accent"
-            title={vocal ? "Lire le résumé d'actions" : "Lire la réponse"}
+            title="Lire un résumé à voix haute"
           >
-            <Icon name="volume_up" className="text-[14px]" /> {vocal ? "Écouter le résumé" : "Écouter"}
+            <Icon name="volume_up" className="text-[14px]" /> Écouter le résumé
           </button>
           <button onClick={stopSpeaking} className="inline-flex items-center rounded-md border border-line px-1.5 h-6 hover:text-ink" aria-label="Arrêter la lecture">
             <Icon name="stop" className="text-[14px]" />

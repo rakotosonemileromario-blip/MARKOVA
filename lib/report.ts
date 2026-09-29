@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildSystemPrompt, GLOBAL_ANALYSIS_PROMPT, type Memory } from "./agent";
-import { generate, type ToolSet } from "./llm";
+import { generate, type ToolSet, type Turn } from "./llm";
+import { runWebTool, WEB_TOOLS } from "./webtools";
 import { getGoogleSessions, googleToolDefs, runGoogleTool, todayIn } from "./google";
 import { getMetaSession, META_TOOLS, runMetaTool } from "./meta";
 import { loadAllSkills } from "./skills";
@@ -35,6 +36,56 @@ Si une source n'est pas connectée ou ne renvoie rien, dis-le en une ligne et co
 type ReportResult = { conversationId: string; model: string };
 
 /**
+ * Prépare l'agent pour un travail autonome (sans utilisateur connecté) : consignes, mémoire générale,
+ * outils de lecture Meta / Google / Web. Aucune action n'est exécutée : il n'y a pas de proposer_action.
+ */
+export async function autonomousAgent(supabase: SupabaseClient, userId: string, timezone: string, skillIds: string[]) {
+  const [allSkills, memoriesRes, googleAccounts, meta] = await Promise.all([
+    loadAllSkills(supabase, userId),
+    supabase.from("memories").select("category, skill, content").eq("user_id", userId).eq("active", true).is("project_id", null).order("created_at"),
+    getGoogleSessions(supabase, { userId, timezone }).catch(() => []),
+    getMetaSession(supabase, userId).catch(() => null),
+  ]);
+
+  const tools: ToolSet = {
+    defs: [...WEB_TOOLS, ...(googleAccounts.length ? googleToolDefs(googleAccounts) : []), ...(meta ? META_TOOLS : [])],
+    run: async (name, args) => {
+      const web = await runWebTool(name, args, () => {});
+      if (web !== null) return web;
+      if (meta) {
+        const m = await runMetaTool(meta, name, args);
+        if (m !== null) return m;
+      }
+      return runGoogleTool(googleAccounts, name, args);
+    },
+  };
+
+  const system = buildSystemPrompt({
+    allSkills,
+    activeSkills: allSkills.filter((s) => s.always_loaded || skillIds.includes(s.id)),
+    memories: (memoriesRes.data ?? []) as Memory[],
+    files: [],
+    webSearch: false,
+    timezone,
+    google: googleAccounts.length ? { emails: googleAccounts.map((a) => a.email) } : null,
+    meta: meta ? { name: meta.name } : null,
+  });
+  return { system, tools };
+}
+
+/** Lance l'agent et renvoie le texte complet. */
+export async function runAgent(system: string, turns: Turn[], tools: ToolSet) {
+  let text = "";
+  let model = "";
+  for await (const ev of generate({ system, turns, webSearch: false, tools })) {
+    if (ev.type === "text") text += ev.text;
+    else if (ev.type === "model") model = ev.model;
+  }
+  if (!text.trim()) throw new Error("le modèle n'a renvoyé aucun texte");
+  return { text, model };
+}
+
+/**
  * Génère un rapport complet (hebdomadaire ou analyse globale) pour un utilisateur, sans interaction.
  * supabase peut être le client « service » : toutes les requêtes filtrent par userId.
  */
@@ -44,44 +95,10 @@ export async function generateReport(
   timezone: string,
   kind: "hebdo" | "globale" = "hebdo",
 ): Promise<ReportResult> {
-  const [allSkills, memoriesRes, googleAccounts, meta] = await Promise.all([
-    loadAllSkills(supabase, userId),
-    supabase.from("memories").select("category, skill, content").eq("user_id", userId).eq("active", true).is("project_id", null).order("created_at"),
-    getGoogleSessions(supabase, { userId, timezone }).catch(() => []),
-    getMetaSession(supabase, userId).catch(() => null),
-  ]);
-
-  const tools: ToolSet = {
-    defs: [...(googleAccounts.length ? googleToolDefs(googleAccounts) : []), ...(meta ? META_TOOLS : [])],
-    run: async (name, args) => {
-      if (meta) {
-        const m = await runMetaTool(meta, name, args);
-        if (m !== null) return m;
-      }
-      return runGoogleTool(googleAccounts, name, args);
-    },
-  };
-
-  const system =
-    buildSystemPrompt({
-      allSkills,
-      activeSkills: allSkills.filter((s) => s.always_loaded || ["media-buying", "analytics"].includes(s.id)),
-      memories: (memoriesRes.data ?? []) as Memory[],
-      files: [],
-      webSearch: false,
-      timezone,
-      google: googleAccounts.length ? { emails: googleAccounts.map((a) => a.email) } : null,
-      meta: meta ? { name: meta.name } : null,
-    }) + (kind === "hebdo" ? REPORT_FORMAT : GLOBAL_ANALYSIS_PROMPT);
-
+  const agent = await autonomousAgent(supabase, userId, timezone, ["media-buying", "analytics"]);
+  const system = agent.system + (kind === "hebdo" ? REPORT_FORMAT : GLOBAL_ANALYSIS_PROMPT);
   const request = kind === "hebdo" ? WEEKLY_REPORT_REQUEST : "Analyse globale";
-  let text = "";
-  let model = "";
-  for await (const ev of generate({ system, turns: [{ role: "user", text: request }], webSearch: false, tools })) {
-    if (ev.type === "text") text += ev.text;
-    else if (ev.type === "model") model = ev.model;
-  }
-  if (!text.trim()) throw new Error("le modèle n'a renvoyé aucun texte");
+  const { text, model } = await runAgent(system, [{ role: "user", text: request }], agent.tools);
 
   const date = new Date().toLocaleDateString("fr-FR", { day: "numeric", month: "long", timeZone: timezone });
   const title = kind === "hebdo" ? `📊 Rapport hebdo du ${date}` : `🧭 Analyse globale du ${date}`;

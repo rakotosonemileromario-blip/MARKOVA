@@ -30,6 +30,7 @@ function urlBase64ToUint8Array(base64: string) {
 export default function AlertsCenter(props: {
   notifications: Notif[];
   pendingActions: Pending[];
+  followups: { id: string; due_at: string; instruction: string; conversation_id: string | null }[];
   rules: { id: string; text: string }[];
   weeklyReport: boolean;
   timezone: string;
@@ -163,6 +164,12 @@ export default function AlertsCenter(props: {
       return "Règle supprimée.";
     });
 
+  const cancelFollowup = (id: string) =>
+    run("followup", async () => {
+      await supabase.from("followups").update({ status: "annulee" }).eq("id", id).eq("status", "prevue");
+      return "Compte rendu annulé.";
+    });
+
   const toggleWeekly = () =>
     run("weekly", async () => {
       await post("/api/settings", { weekly_report: !weekly });
@@ -268,6 +275,32 @@ export default function AlertsCenter(props: {
               );
             })}
           </div>
+        </section>
+
+        {/* Relances programmées */}
+        <section className="card p-4">
+          <h2 className="font-semibold flex items-center gap-2">
+            <Icon name="alarm" className="text-[19px] text-warn" /> Comptes rendus programmés
+          </h2>
+          <p className="text-[12px] text-muted mt-1">
+            Dis dans le chat « rends-moi compte dans 3 h » ou « à 18 h, dis-moi si le CPL a baissé » : MARKOVA refait l'analyse à l'heure dite et te prévient.
+          </p>
+          <ul className="mt-3 space-y-2">
+            {props.followups.length === 0 && <li className="text-[13px] text-muted">Aucun compte rendu prévu.</li>}
+            {props.followups.map((f) => (
+              <li key={f.id} className="flex items-center gap-2 rounded-lg bg-soft border border-line px-3 py-2 text-[13px]">
+                <span className="shrink-0 rounded-md bg-warn-soft text-warn px-2 h-6 inline-flex items-center font-semibold">
+                  ⏰ {new Date(f.due_at).toLocaleString("fr-FR", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: props.timezone })}
+                </span>
+                <Link href={f.conversation_id ? `/c/${f.conversation_id}` : "/chat"} className="flex-1 min-w-0 truncate hover:underline" title={f.instruction}>
+                  {f.instruction}
+                </Link>
+                <button onClick={() => cancelFollowup(f.id)} className="text-muted hover:text-danger" aria-label="Annuler ce compte rendu">
+                  <Icon name="close" className="text-[17px]" />
+                </button>
+              </li>
+            ))}
+          </ul>
         </section>
 
         {/* Actions en attente */}

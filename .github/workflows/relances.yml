@@ -1,0 +1,21 @@
+# Déclencheur gratuit des relances programmées de MARKOVA (« rends-moi compte dans 3 h »),
+# même quand l'application est fermée. GitHub peut retarder l'exécution de quelques minutes.
+# Prérequis : secret du dépôt CRON_SECRET (Settings → Secrets and variables → Actions),
+# même valeur que dans Vercel.
+name: Relances MARKOVA
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+jobs:
+  relances:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Exécuter les relances arrivées à échéance
+        run: |
+          curl -sS --fail-with-body --max-time 300 \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            https://markova-dtr1.vercel.app/api/cron/relances

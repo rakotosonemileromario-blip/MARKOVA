@@ -1,6 +1,8 @@
 import { adminConfigured, createAdminClient } from "@/lib/supabase/admin";
 import { cronAuthorized, cronUsers } from "@/lib/cron";
 import { runSurveillance } from "@/lib/monitor";
+import { runDueFollowups } from "@/lib/followups";
+import { resolveTimezone } from "@/lib/timezone";
 
 export const maxDuration = 300;
 
@@ -18,5 +20,7 @@ export async function GET(req: Request) {
       report.push({ user: u.id.slice(0, 8), erreur: err instanceof Error ? err.message : String(err) });
     }
   }
-  return Response.json({ ok: true, report });
+  // Filet de sécurité : relances en retard (si aucun déclencheur fréquent n'est configuré).
+  const relances = await runDueFollowups(admin, { timezoneOf: (userId) => resolveTimezone(admin, null, userId), max: 5 }).catch(() => []);
+  return Response.json({ ok: true, report, relances: relances.length });
 }

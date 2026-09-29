@@ -8,6 +8,7 @@ import { Icon, LogoMark } from "./ui";
 import ProjectSwitcher from "./ProjectSwitcher";
 import DeviceSync from "./DeviceSync";
 import NotificationBell from "./NotificationBell";
+import { useTones } from "@/lib/tones";
 
 const TABS_LEFT = [
   { href: "/", label: "Accueil", icon: "space_dashboard" },
@@ -22,17 +23,22 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
   const analyzing = isActive(pathname, "/chat");
+  const tones = useTones([...TABS_LEFT, ...TABS_RIGHT].map((t) => t.href));
 
   const tab = (t: { href: string; label: string; icon: string }) => {
     const active = isActive(pathname, t.href);
+    const tone = tones[t.href];
     return (
       <Link
         key={t.href}
         href={t.href}
-        className={`flex-1 flex flex-col items-center justify-center gap-0.5 text-[11px] font-medium ${active ? "text-ink" : "text-muted"}`}
+        className="flex-1 flex flex-col items-center justify-center gap-0.5 text-[11px] font-medium"
+        style={{ color: active ? tone.fg : undefined }}
       >
-        <Icon name={t.icon} filled={active} className="text-[22px]" />
-        {t.label}
+        <span className="grid place-items-center rounded-full px-3 h-7 transition-colors" style={{ background: active ? tone.soft : undefined }}>
+          <Icon name={t.icon} filled={active} className="text-[22px]" style={{ color: tone.fg }} />
+        </span>
+        <span className={active ? "" : "text-muted"}>{t.label}</span>
       </Link>
     );
   };

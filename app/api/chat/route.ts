@@ -12,6 +12,7 @@ import { getProjectContext, linkedProjects, PROJECT_COOKIE, PROJECT_TOOLS, runPr
 import { resolveTimezone, TZ_COOKIE } from "@/lib/timezone";
 import { listWatchRules, runWatchTool, WATCH_TOOLS } from "@/lib/watch-tools";
 import { describeRule } from "@/lib/monitor";
+import { FOLLOWUP_TOOLS, runFollowupTool } from "@/lib/followups";
 
 type ProposedAction = { id: string; kind: string; account_email: string; summary: string; reason: string | null; status: string };
 
@@ -218,6 +219,7 @@ export async function POST(req: Request) {
       ...WEB_TOOLS,
       ...PROJECT_TOOLS,
       ...WATCH_TOOLS,
+      ...FOLLOWUP_TOOLS,
       ...(googleAccounts.length ? googleToolDefs(googleAccounts) : []),
       ...(meta ? META_TOOLS : []),
       ...(proposeTool ? [proposeTool] : []),
@@ -230,6 +232,8 @@ export async function POST(req: Request) {
       if (proj !== null) return proj;
       const watch = await runWatchTool(supabase, name, args);
       if (watch !== null) return watch;
+      const followup = await runFollowupTool(supabase, name, args, { conversationId: conversationId!, timezone });
+      if (followup !== null) return followup;
       if (name === "proposer_action") return proposeActions(args);
       if (meta) {
         const m = await runMetaTool(meta, name, args);

@@ -8,6 +8,7 @@ import { Brand, Icon } from "./ui";
 import ProjectSwitcher from "./ProjectSwitcher";
 import { getCurrentProjectId } from "@/lib/project-client";
 import { UnreadBadge, useUnreadCount } from "./NotificationBell";
+import { useTones } from "@/lib/tones";
 
 type Conv = { id: string; title: string; updated_at: string };
 
@@ -39,6 +40,7 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
   const pathname = usePathname();
   const [convs, setConvs] = useState<Conv[]>([]);
   const unread = useUnreadCount();
+  const tones = useTones(NAV.map((n) => n.href));
 
   // Historique du projet actif uniquement.
   const load = useCallback(async () => {
@@ -101,16 +103,20 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
         <nav className="px-3 mt-4 space-y-0.5">
           {NAV.filter((n) => n.href !== "/chat").map((n) => {
             const active = isActive(pathname, n.href);
+            const tone = tones[n.href];
             return (
               <Link
                 key={n.href}
                 href={n.href}
+                style={active ? { background: tone.soft, color: tone.fg } : undefined}
                 className={`relative flex items-center gap-3 rounded-lg px-3 h-9 text-[13px] transition-colors ${
-                  active ? "bg-accent-soft text-accent-text font-semibold" : "text-muted hover:bg-soft hover:text-ink"
+                  active ? "font-semibold" : "text-muted hover:bg-soft hover:text-ink"
                 }`}
               >
-                {active && <span className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full bg-cyan shadow-[0_0_10px_#22d3ee]" />}
-                <Icon name={n.icon} className="text-[19px]" filled={active} />
+                {active && (
+                  <span className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full" style={{ background: tone.fg, boxShadow: `0 0 10px ${tone.fg}` }} />
+                )}
+                <Icon name={n.icon} className="text-[19px]" filled={active} style={{ color: tone.fg }} />
                 {n.label}
                 {n.href === "/notifications" && <UnreadBadge count={unread} />}
               </Link>

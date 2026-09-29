@@ -446,3 +446,50 @@ body::after {
 .md th, .md td { padding: 0.5em 0.75em; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
 .md th { background: var(--soft); font-weight: 600; color: var(--muted); font-size: 0.92em; }
 .md tr:last-child td { border-bottom: 0; }
+
+/* ════════════════════════════════════════════════════════════════
+   COULEURS VIVES — jaune, rouge, vert, violet, bleu
+   ════════════════════════════════════════════════════════════════ */
+:root {
+  --jaune: #facc15;
+  --rouge: #fb7185;
+  --vert: #4ade80;
+  --violet-vif: #c084fc;
+  --bleu: #60a5fa;
+}
+
+/* Cartes : liseré coloré en haut, couleur tournante (5 teintes) */
+.card { --tone: var(--bleu); }
+.card:nth-of-type(5n + 1) { --tone: var(--jaune); }
+.card:nth-of-type(5n + 2) { --tone: var(--violet-vif); }
+.card:nth-of-type(5n + 3) { --tone: var(--vert); }
+.card:nth-of-type(5n + 4) { --tone: var(--rouge); }
+.card:nth-of-type(5n + 5) { --tone: var(--bleu); }
+.card { border-top: 2px solid color-mix(in srgb, var(--tone) 70%, transparent); }
+.card:hover { box-shadow: 0 10px 40px -14px color-mix(in srgb, var(--tone) 55%, transparent); }
+
+/* Titres de page multicolores */
+main h1 {
+  background: linear-gradient(90deg, var(--jaune), var(--rouge) 30%, var(--violet-vif) 55%, var(--bleu) 80%, var(--vert));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Réponses de l'agent : titres colorés tour à tour, puces et chiffres en couleur */
+.md h2, .md h3 { padding-left: 0.6em; border-left: 3px solid var(--h, var(--bleu)); }
+.md h2:nth-of-type(5n + 1), .md h3:nth-of-type(5n + 1) { --h: var(--jaune); color: var(--jaune); }
+.md h2:nth-of-type(5n + 2), .md h3:nth-of-type(5n + 2) { --h: var(--violet-vif); color: var(--violet-vif); }
+.md h2:nth-of-type(5n + 3), .md h3:nth-of-type(5n + 3) { --h: var(--vert); color: var(--vert); }
+.md h2:nth-of-type(5n + 4), .md h3:nth-of-type(5n + 4) { --h: var(--rouge); color: var(--rouge); }
+.md h2:nth-of-type(5n + 5), .md h3:nth-of-type(5n + 5) { --h: var(--bleu); color: var(--bleu); }
+.md ul > li:nth-child(5n + 1)::marker { color: var(--jaune); }
+.md ul > li:nth-child(5n + 2)::marker { color: var(--violet-vif); }
+.md ul > li:nth-child(5n + 3)::marker { color: var(--vert); }
+.md ul > li:nth-child(5n + 4)::marker { color: var(--rouge); }
+.md ul > li:nth-child(5n + 5)::marker { color: var(--bleu); }
+.md ol > li::marker { color: var(--jaune); font-weight: 700; }
+.md th { color: var(--bleu); background: rgba(96, 165, 250, 0.08); }
+.md tbody tr:nth-child(even) { background: rgba(255, 255, 255, 0.025); }
+.md blockquote { border-color: rgba(250, 204, 21, 0.35); background: rgba(250, 204, 21, 0.07); }
+.md strong { color: #fde68a; }

@@ -1,8 +1,8 @@
 // Petits éléments d'interface partagés (icônes, logo, étiquettes).
 
-export function Icon({ name, className = "", filled = false }: { name: string; className?: string; filled?: boolean }) {
+export function Icon({ name, className = "", filled = false, style }: { name: string; className?: string; filled?: boolean; style?: React.CSSProperties }) {
   return (
-    <span className={`icon ${filled ? "filled" : ""} ${className}`} aria-hidden>
+    <span className={`icon ${filled ? "filled" : ""} ${className}`} style={style} aria-hidden>
       {name}
     </span>
   );

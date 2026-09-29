@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect } from "react";
+import { NOTIFICATIONS_EVENT } from "./NotificationBell";
+import { REFRESH_EVENT } from "./Sidebar";
 
 const TZ_COOKIE = "markova_tz";
 
@@ -18,6 +20,30 @@ export default function DeviceSync() {
       fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ timezone: tz }) }).catch(() => {});
     }
     if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
+  }, []);
+
+  // Relances programmées : tant que l'application est ouverte, elles partent à la minute près.
+  useEffect(() => {
+    let running = false;
+    const tick = async () => {
+      if (running || document.visibilityState === "hidden") return;
+      running = true;
+      try {
+        const res = await fetch("/api/relances/run", { method: "POST" });
+        const json = await res.json().catch(() => ({}));
+        if (json.done?.length) {
+          window.dispatchEvent(new Event(NOTIFICATIONS_EVENT));
+          window.dispatchEvent(new Event(REFRESH_EVENT));
+        }
+      } catch {
+        // hors ligne : on réessaiera à la minute suivante
+      } finally {
+        running = false;
+      }
+    };
+    tick();
+    const timer = setInterval(tick, 60_000);
+    return () => clearInterval(timer);
   }, []);
   return null;
 }

@@ -2,8 +2,38 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-// Voix gratuite : reconnaissance vocale du navigateur (Chrome, Edge, Android, Safari).
-// Sans elle (ex. Firefox, WebView d'APK) : enregistrement audio transcrit par le serveur.
+// Voix gratuite : reconnaissance vocale du navigateur (Chrome, Edge, Android, Safari) pour le texte en direct,
+// ET enregistrement audio en parallèle : à l'arrêt, l'audio est retranscrit par le serveur (Gemini), qui connaît
+// l'accent malgache, le mélange français / malgache et le vocabulaire marketing. Si le serveur ne répond pas
+// à temps, on garde le texte du navigateur. Sans reconnaissance du navigateur (Firefox, WebView) : serveur seul.
+
+const SERVER_TIMEOUT_MS = 20_000;
+
+async function blobToBase64(blob: Blob) {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+
+/** Transcription serveur de l'audio, avec le brouillon du navigateur comme indice. */
+async function serverTranscribe(blob: Blob, draft: string): Promise<string> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), SERVER_TIMEOUT_MS);
+  try {
+    const res = await fetch("/api/transcribe", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ data: await blobToBase64(blob), mimeType: blob.type, draft }),
+      signal: ctrl.signal,
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error ?? "Transcription impossible");
+    return String(json.text ?? "");
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 type Recognition = {
   lang: string;
@@ -48,6 +78,31 @@ export function useSpeechToText(onFinal: (text: string) => void) {
     if (t && !cancelled.current) onFinalRef.current(t);
   }, []);
 
+  // Les deux sources doivent être terminées (texte du navigateur + audio enregistré) avant la transcription finale.
+  const pending = useRef({ recognition: false, audio: null as Blob | null | "aucun" });
+
+  const finalize = useCallback(async () => {
+    const p = pending.current;
+    if (p.recognition || p.audio === null) return; // on attend l'autre source
+    const draft = finalText.current.trim();
+    if (cancelled.current) return setState("idle");
+    if (p.audio === "aucun" || p.audio.size < 2000) {
+      if (!draft && p.audio === "aucun") setError("Je n'ai rien entendu. Réessaie en parlant près du micro.");
+      return finish(draft);
+    }
+    setState("transcribing");
+    try {
+      const text = await serverTranscribe(p.audio, draft);
+      setTranscript(text || draft);
+      finish(text || draft);
+    } catch (err) {
+      // Serveur lent ou indisponible : on garde la version du navigateur.
+      if (draft) return finish(draft);
+      setError(err instanceof Error && err.name !== "AbortError" ? err.message : "Transcription trop lente, réessaie.");
+      setState("idle");
+    }
+  }, [finish]);
+
   const start = useCallback(async () => {
     setError(null);
     setTranscript("");
@@ -55,9 +110,33 @@ export function useSpeechToText(onFinal: (text: string) => void) {
     userStopped.current = false;
     cancelled.current = false;
     stopSpeaking();
+    pending.current = { recognition: false, audio: null };
+    rec.current = null;
+    media.current = null;
 
+    // 1. Enregistrement audio (pour la transcription précise côté serveur).
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+      const type = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg"].find((t) => MediaRecorder.isTypeSupported?.(t));
+      const recorder = new MediaRecorder(stream, { ...(type ? { mimeType: type } : {}), audioBitsPerSecond: 32_000 });
+      const chunks: Blob[] = [];
+      recorder.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+      recorder.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        pending.current.audio = chunks.length ? new Blob(chunks, { type: recorder.mimeType || "audio/webm" }) : "aucun";
+        finalize();
+      };
+      media.current = recorder;
+      recorder.start(1000);
+    } catch {
+      media.current = null;
+      pending.current.audio = "aucun";
+    }
+
+    // 2. Reconnaissance du navigateur (texte en direct).
     const r = getRecognition();
     if (r) {
+      pending.current.recognition = true;
       rec.current = r;
       r.lang = "fr-FR";
       r.interimResults = true;
@@ -73,61 +152,37 @@ export function useSpeechToText(onFinal: (text: string) => void) {
       };
       r.onerror = (e) => {
         if (e.error === "not-allowed" || e.error === "service-not-allowed") {
-          setError("Micro refusé : autorise-le dans le navigateur.");
+          if (!media.current) setError("Micro refusé : autorise-le dans le navigateur.");
           userStopped.current = true;
+        } else if (e.error === "audio-capture" || e.error === "network") {
+          // Micro déjà utilisé par l'enregistrement (certains téléphones) ou hors ligne : l'audio suffit.
+          if (media.current) userStopped.current = true;
+          else setError(`Micro : ${e.error}`);
         } else if (e.error !== "no-speech" && e.error !== "aborted") setError(`Micro : ${e.error}`);
       };
       // Le navigateur coupe après un silence : on relance tant que l'utilisateur n'a pas appuyé sur stop.
       r.onend = () => {
-        if (userStopped.current) return finish(finalText.current);
-        try {
-          r.start();
-        } catch {
-          finish(finalText.current);
+        if (!userStopped.current) {
+          try {
+            return r.start();
+          } catch {
+            // relance impossible : on termine
+          }
         }
+        pending.current.recognition = false;
+        finalize();
       };
-      r.start();
-      setState("listening");
+      try {
+        r.start();
+      } catch {
+        pending.current.recognition = false;
+      }
+    } else if (!media.current) {
+      setError("Micro indisponible sur cet appareil.");
       return;
     }
-
-    // Repli : enregistrement puis transcription serveur.
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const rec2 = new MediaRecorder(stream);
-      const chunks: Blob[] = [];
-      rec2.ondataavailable = (e) => chunks.push(e.data);
-      rec2.onstop = async () => {
-        stream.getTracks().forEach((t) => t.stop());
-        if (cancelled.current) return setState("idle");
-        setState("transcribing");
-        try {
-          const blob = new Blob(chunks, { type: rec2.mimeType || "audio/webm" });
-          const bytes = new Uint8Array(await blob.arrayBuffer());
-          let bin = "";
-          for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-          const data = btoa(bin);
-          const res = await fetch("/api/transcribe", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ data, mimeType: blob.type }),
-          });
-          const json = await res.json();
-          if (!res.ok) throw new Error(json.error ?? "Transcription impossible");
-          setTranscript(json.text);
-          finish(json.text);
-        } catch (err) {
-          setError(err instanceof Error ? err.message : String(err));
-          setState("idle");
-        }
-      };
-      media.current = rec2;
-      rec2.start();
-      setState("listening");
-    } catch {
-      setError("Micro indisponible sur cet appareil.");
-    }
-  }, [finish]);
+    setState("listening");
+  }, [finalize]);
 
   /** Arrête l'écoute et envoie ce qui a été dit. */
   const stop = useCallback(() => {
@@ -147,7 +202,9 @@ export function useSpeechToText(onFinal: (text: string) => void) {
   useEffect(
     () => () => {
       userStopped.current = true;
+      cancelled.current = true;
       rec.current?.abort();
+      if (media.current && media.current.state !== "inactive") media.current.stop();
     },
     [],
   );
@@ -181,6 +238,24 @@ export function speak(markdown: string) {
     u.rate = 1.05;
     window.speechSynthesis.speak(u);
   }
+}
+
+/**
+ * Lit un RÉSUMÉ de la réponse, jamais la réponse entière : le bloc ```vocal s'il existe,
+ * sinon un résumé parlé demandé au serveur, sinon le début de la réponse.
+ */
+export async function speakSummary(markdown: string, vocal?: string | null) {
+  if (vocal) return speak(vocal);
+  stopSpeaking();
+  try {
+    const res = await fetch("/api/resume", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: markdown.slice(0, 20_000) }) });
+    const json = await res.json();
+    if (res.ok && json.text) return speak(json.text);
+  } catch {
+    // repli ci-dessous
+  }
+  const words = plain(markdown).split(" ");
+  speak(words.slice(0, 70).join(" ") + (words.length > 70 ? ". Le détail est affiché à l'écran." : ""));
 }
 
 export function stopSpeaking() {

@@ -14,9 +14,7 @@ export const META_SCOPES = [
   "business_management",
   "pages_show_list",
   "pages_read_engagement",
-  "read_insights",
   "instagram_basic",
-  "instagram_manage_insights",
 ];
 
 // ─── App Meta (obligatoire pour « Connecter avec Facebook ») ─────

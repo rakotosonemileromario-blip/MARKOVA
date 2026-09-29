@@ -11,7 +11,6 @@ import { resolveTimezone, TZ_COOKIE } from "@/lib/timezone";
 
 export const dynamic = "force-dynamic";
 
-const BRIEFING = "Fais-moi mon briefing du jour : agenda, mails importants et tâches. Termine par les 3 priorités.";
 const GLOBAL_ANALYSIS = "Analyse globale : état actuel, problèmes détectés, priorités et actions proposées.";
 
 const MEMORY_ICONS: Record<string, string> = {
@@ -76,9 +75,16 @@ export default async function HomePage() {
               </p>
             </div>
             <span className="rounded border border-cyan/40 text-cyan px-1.5 h-5 inline-flex items-center gap-1 text-[10px] font-bold tracking-[0.08em] uppercase shrink-0">
-              <span className="size-1.5 rounded-full bg-cyan animate-ping" /> En ligne
+              <span className="size-1.5 rounded-full bg-cyan" /> En ligne
             </span>
           </div>
+          <Link
+            href={`/chat?q=${encodeURIComponent(GLOBAL_ANALYSIS)}&send=1`}
+            className="mt-3.5 w-full rounded-xl bg-gradient-to-r from-accent-strong to-accent text-white h-11 inline-flex items-center justify-center gap-2 text-[14px] font-semibold"
+            title="État actuel, problèmes détectés, priorités et actions proposées, à partir de toutes les sources connectées"
+          >
+            <Icon name="query_stats" className="text-[19px]" /> Analyse globale de {current ? "ce projet" : "mon marketing"}
+          </Link>
         </section>
 
         {/* Statistiques animées */}
@@ -99,49 +105,6 @@ export default async function HomePage() {
 
         {/* Parler à l'IA */}
         <VoiceHero />
-
-        {/* Pulse : briefing */}
-        <section className="card p-4" style={{ ["--i" as string]: 2 }}>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 font-semibold">
-              <span className="grid place-items-center size-7 rounded-lg bg-accent-strong text-white">
-                <Icon name="monitoring" className="text-[17px]" />
-              </span>
-              MARKOVA Pulse
-            </div>
-            <span className="rounded border border-cyan/40 bg-cyan-soft text-cyan px-2 h-6 inline-flex items-center gap-1 text-[11px] font-semibold">
-              <span className="size-1.5 rounded-full bg-cyan" /> {googleAccounts.length ? "Agenda · Mails · Tâches" : "Mémoire · Fichiers"}
-            </span>
-          </div>
-          <p className="mt-3 text-[20px] font-semibold leading-snug tracking-tight">
-            {googleAccounts.length ? (
-              <>Ton <span className="text-accent-text underline underline-offset-4 decoration-accent/60">briefing du jour</span> : rendez-vous, mails à traiter, tâches en retard et priorités.</>
-            ) : (
-              <>Connecte Google pour un <span className="text-accent-text">briefing du jour</span> avec ton agenda, tes mails et tes tâches.</>
-            )}
-          </p>
-          <div className="mt-4 flex gap-2">
-            {googleAccounts.length ? (
-              <Link
-                href={`/chat?q=${encodeURIComponent(BRIEFING)}&send=1`}
-                className="flex-1 rounded-lg bg-accent-strong text-white h-11 inline-flex items-center justify-center gap-1.5 text-[14px] font-semibold pulse-glow shine"
-              >
-                Lancer le briefing <Icon name="arrow_forward" className="text-[18px]" />
-              </Link>
-            ) : (
-              <Link href="/connexions" className="flex-1 rounded-lg bg-accent-strong text-white h-11 inline-flex items-center justify-center gap-1.5 text-[14px] font-semibold glow">
-                Connecter Google <Icon name="arrow_forward" className="text-[18px]" />
-              </Link>
-            )}
-            <Link
-              href={`/chat?q=${encodeURIComponent(GLOBAL_ANALYSIS)}&send=1`}
-              className="rounded-lg border border-line bg-soft h-11 px-3 inline-flex items-center gap-1.5 text-[13px] font-semibold"
-              title="État actuel, problèmes détectés, priorités et actions proposées, à partir de toutes les sources connectées"
-            >
-              <Icon name="query_stats" className="text-[18px] text-cyan" /> Analyse globale
-            </Link>
-          </div>
-        </section>
 
         {/* Mémoire active */}
         <section className="card p-4" style={{ ["--i" as string]: 3 }}>

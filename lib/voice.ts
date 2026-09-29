@@ -86,6 +86,9 @@ export function useSpeechToText(onFinal: (text: string) => void) {
     if (p.recognition || p.audio === null) return; // on attend l'autre source
     const draft = finalText.current.trim();
     if (cancelled.current) return setState("idle");
+    // Texte de la dictée disponible : envoi immédiat (MARKOVA comprend les mots mal reconnus).
+    // La transcription serveur, plus lente, ne sert qu'en secours quand la dictée n'a rien donné.
+    if (draft) return finish(draft);
     if (p.audio === "aucun" || p.audio.size < 2000) {
       if (!draft && p.audio === "aucun") setError("Je n'ai rien entendu. Réessaie en parlant près du micro.");
       return finish(draft);
@@ -114,8 +117,12 @@ export function useSpeechToText(onFinal: (text: string) => void) {
     rec.current = null;
     media.current = null;
 
-    // 1. Enregistrement audio (pour la transcription précise côté serveur).
-    try {
+    // 1. Enregistrement audio de secours (transcription serveur si la dictée ne donne rien).
+    // Pas sur téléphone : le micro y est partagé avec la dictée de Chrome, ce qui la ralentit.
+    const r0 = getRecognition();
+    const mobile = /Android|iPhone|iPad/i.test(navigator.userAgent);
+    if (r0 && mobile) pending.current.audio = "aucun";
+    else try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
       const type = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg"].find((t) => MediaRecorder.isTypeSupported?.(t));
       const recorder = new MediaRecorder(stream, { ...(type ? { mimeType: type } : {}), audioBitsPerSecond: 32_000 });
@@ -134,7 +141,7 @@ export function useSpeechToText(onFinal: (text: string) => void) {
     }
 
     // 2. Reconnaissance du navigateur (texte en direct).
-    const r = getRecognition();
+    const r = r0;
     if (r) {
       pending.current.recognition = true;
       rec.current = r;

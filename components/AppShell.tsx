@@ -45,7 +45,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <div className="h-dvh flex">
+    <div className="h-[var(--app-h,100dvh)] flex">
       <DeviceSync />
       <ScrollReveal />
       <Sidebar open={open} onClose={() => setOpen(false)} />

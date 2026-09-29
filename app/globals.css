@@ -208,15 +208,16 @@ body::after {
   mask-composite: exclude;
   opacity: 0;
   transition: opacity 0.4s;
-  animation: spin-angle 4s linear infinite;
   pointer-events: none;
   z-index: 1;
 }
+/* Le liseré ne tourne que lorsqu'il est visible (sinon chaque carte recalcule son dessin en continu). */
 .card:hover::before,
 .card.is-active::before,
 .holo:hover::before,
 .holo.is-active::before {
   opacity: 1;
+  animation: spin-angle 4s linear infinite;
 }
 @keyframes spin-angle {
   to { --angle: 360deg; }
@@ -531,3 +532,36 @@ main h1 {
 .sr:not(.sr-in) .bar-grow,
 .sr:not(.sr-in) .line-draw,
 .sr:not(.sr-in) .donut-in { animation-play-state: paused; }
+
+/* ════════════════════════════════════════════════════════════════
+   MODE LÉGER — téléphones (écran tactile) : même design, sans les effets
+   qui obligent l'appareil à redessiner l'écran en permanence.
+   ════════════════════════════════════════════════════════════════ */
+@media (hover: none) {
+  body::before,
+  body::after { animation: none; }
+  .card {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: linear-gradient(180deg, #171b23, #12151b);
+  }
+  .glass {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: rgba(22, 26, 34, 0.97);
+  }
+  .card.is-active::before,
+  .holo.is-active::before { animation: none; }
+  .text-holo { animation: none; }
+  .pulse-glow { animation: none; box-shadow: 0 8px 24px rgba(79, 70, 229, 0.35); }
+  .shine::after { display: none; }
+  .reveal { animation-name: reveal-lite; }
+  .card { animation-name: reveal-lite; }
+  .sr { filter: none; transition: opacity 0.5s ease, transform 0.55s cubic-bezier(0.2, 0.7, 0.2, 1); }
+  .orb::before,
+  .orb::after { animation-duration: 8s; }
+}
+@keyframes reveal-lite {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: none; }
+}

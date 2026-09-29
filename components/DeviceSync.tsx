@@ -22,6 +22,22 @@ export default function DeviceSync() {
     if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
   }, []);
 
+  // Hauteur réelle de l'écran : dans l'APK, « 100dvh » compte une barre d'outils invisible et
+  // pousse la barre du bas sous la barre système. On mesure la zone vraiment visible.
+  useEffect(() => {
+    const set = () => {
+      const h = Math.round(window.visualViewport?.height ?? window.innerHeight);
+      document.documentElement.style.setProperty("--app-h", `${Math.min(h, window.innerHeight)}px`);
+    };
+    set();
+    window.addEventListener("resize", set);
+    window.visualViewport?.addEventListener("resize", set);
+    return () => {
+      window.removeEventListener("resize", set);
+      window.visualViewport?.removeEventListener("resize", set);
+    };
+  }, []);
+
   // Relances programmées : tant que l'application est ouverte, elles partent à la minute près.
   useEffect(() => {
     let running = false;

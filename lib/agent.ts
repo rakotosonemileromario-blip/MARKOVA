@@ -115,7 +115,8 @@ Seuils conseillés à mettre sous surveillance (propose \`surveillance_creer\` s
 export const VOICE_SUMMARY_PROMPT = `
 ---
 # MODE VOCAL
-L'utilisateur t'a parlé au micro et va ÉCOUTER ta réponse. Écris ta réponse complète et détaillée comme d'habitude, puis termine OBLIGATOIREMENT par un bloc exactement de cette forme :
+L'utilisateur t'a parlé au micro et va ÉCOUTER ta réponse.
+Son message vient d'une dictée automatique : il parle français avec un accent malgache et mélange parfois des mots malgaches, donc certains mots peuvent être mal reconnus (ex. « si pé elle » = CPL, « méta » = Meta, noms de projets déformés). Comprends l'intention la plus probable sans le faire remarquer ; ne demande une précision courte que si c'est vraiment ambigu. Écris ta réponse complète et détaillée comme d'habitude, puis termine OBLIGATOIREMENT par un bloc exactement de cette forme :
 
 \`\`\`vocal
 (résumé à lire à voix haute)

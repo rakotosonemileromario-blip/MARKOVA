@@ -1,0 +1,24 @@
+{
+  "id": "veille-concurrentielle",
+  "name": "Veille concurrentielle / Marché & tendances",
+  "source": "MARKOVA — Competitive & Market Intelligence Engine",
+  "description": "Analyse des concurrents (offre, prix, messages, pubs actives, contenus, SEO, avis), tendances du marché, opportunités et menaces, benchmark et recommandations de différenciation, avec sources Web citées.",
+  "keywords": [
+    "concurrent",
+    "concurrence",
+    "veille",
+    "benchmark",
+    "marché",
+    "tendance",
+    "bibliothèque publicitaire",
+    "ad library",
+    "étude de marché",
+    "secteur",
+    "swot",
+    "opportunités",
+    "menaces",
+    "que font"
+  ],
+  "role": "skill",
+  "always_loaded": false
+}

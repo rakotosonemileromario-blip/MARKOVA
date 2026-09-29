@@ -6,6 +6,8 @@ import { useState } from "react";
 import Sidebar, { isActive, newChat } from "./Sidebar";
 import { Icon, LogoMark } from "./ui";
 import ProjectSwitcher from "./ProjectSwitcher";
+import DeviceSync from "./DeviceSync";
+import NotificationBell from "./NotificationBell";
 
 const TABS_LEFT = [
   { href: "/", label: "Accueil", icon: "space_dashboard" },
@@ -37,6 +39,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="h-dvh flex">
+      <DeviceSync />
       <Sidebar open={open} onClose={() => setOpen(false)} />
       <div className="flex-1 min-w-0 flex flex-col">
         {/* Barre du haut (mobile) */}
@@ -47,6 +50,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <div className="flex-1 min-w-0">
             <ProjectSwitcher variant="header" />
           </div>
+          <NotificationBell />
           <button onClick={() => setOpen(true)} aria-label="Historique et menu" className="grid place-items-center size-9 rounded-lg bg-soft border border-line">
             <Icon name="menu" className="text-[20px]" />
           </button>

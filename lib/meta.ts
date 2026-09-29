@@ -104,20 +104,21 @@ export async function metaMe(token: string) {
 // ─── Session ─────────────────────────────────────────────────────
 /** Éléments choisis par l'utilisateur (vide = tout ce que la connexion autorise). */
 export type MetaSelection = { pages?: string[]; adAccounts?: string[] };
-export type MetaSession = { name: string; token: string; selection?: MetaSelection };
+export type MetaSession = { name: string; token: string; selection?: MetaSelection; expiresAt?: string | null };
 
-export async function getMetaSession(supabase: SupabaseClient): Promise<MetaSession | null> {
+/** userId : obligatoire avec le client « service » des tâches planifiées (pas de RLS). */
+export async function getMetaSession(supabase: SupabaseClient, userId?: string): Promise<MetaSession | null> {
   if (!process.env.TOKEN_ENCRYPTION_KEY) return null;
-  const { data } = await supabase
-    .from("integrations")
-    .select("account_email, refresh_token_enc, settings")
-    .eq("provider", "meta")
-    .order("updated_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  const q = supabase.from("integrations").select("account_email, refresh_token_enc, settings, expires_at").eq("provider", "meta");
+  const { data } = await (userId ? q.eq("user_id", userId) : q).order("updated_at", { ascending: false }).limit(1).maybeSingle();
   if (!data) return null;
   try {
-    return { name: data.account_email, token: decrypt(data.refresh_token_enc), selection: (data.settings as MetaSelection) ?? {} };
+    return {
+      name: data.account_email,
+      token: decrypt(data.refresh_token_enc),
+      selection: (data.settings as MetaSelection) ?? {},
+      expiresAt: data.expires_at ?? null,
+    };
   } catch {
     return null;
   }
@@ -152,7 +153,7 @@ const n = (v: unknown) => (v == null || v === "" ? null : Number(v));
 const fmt = (v: number | null, d = 2) => (v == null || !Number.isFinite(v) ? "—" : v.toLocaleString("fr-FR", { minimumFractionDigits: d, maximumFractionDigits: d }));
 const div = (a: number | null, b: number | null, m = 1) => (a != null && b ? (a / b) * m : null);
 
-const PRESETS = ["today", "yesterday", "last_7d", "last_14d", "last_30d", "last_90d", "this_month", "last_month", "maximum"];
+const PRESETS = ["today", "yesterday", "last_3d", "last_7d", "last_14d", "last_30d", "last_90d", "this_month", "last_month", "maximum"];
 
 function periodParams(args: Record<string, unknown>): Record<string, string> {
   const since = typeof args.date_debut === "string" ? args.date_debut : "";
@@ -252,6 +253,47 @@ async function performances(s: MetaSession, args: Record<string, unknown>) {
     "",
     "_CTR/CPC sur les clics sur lien. Utilise les id pour proposer une action (pause, réactivation, budget)._",
   ].join("\n");
+}
+
+/** KPI chiffrés par campagne (tous les comptes pub choisis) : utilisés par la surveillance automatique. */
+export type CampaignMetrics = {
+  account: string; currency: string; id: string; name: string; status: string;
+  depenses: number; impressions: number; frequence: number | null;
+  cpm: number | null; ctr: number | null; cpc: number | null; cpl: number | null; cpa: number | null; roas: number | null;
+  leads: number | null; achats: number | null;
+};
+
+export async function campaignMetrics(s: MetaSession, periode: string): Promise<CampaignMetrics[]> {
+  const out: CampaignMetrics[] = [];
+  for (const account of (await adAccounts(s)).filter((a) => a.account_status === 1)) {
+    const [ins, camps] = await Promise.all([
+      graph<{ data: Insight[] }>(`${account.id}/insights`, s.token, {
+        level: "campaign",
+        fields: "campaign_id,campaign_name,spend,impressions,frequency,clicks,inline_link_clicks,actions,action_values",
+        limit: "200",
+        ...periodParams({ periode }),
+      }),
+      graph<{ data: { id: string; effective_status: string }[] }>(`${account.id}/campaigns`, s.token, { fields: "id,effective_status", limit: "500" }),
+    ]);
+    const status = new Map((camps.data ?? []).map((c) => [c.id, c.effective_status]));
+    for (const r of ins.data ?? []) {
+      const spend = n(r.spend) ?? 0;
+      const impr = n(r.impressions) ?? 0;
+      const link = n(r.inline_link_clicks) ?? n(r.clicks) ?? 0;
+      const leads = pick(r.actions, LEAD_TYPES);
+      const purch = pick(r.actions, PURCHASE_TYPES);
+      const rev = pick(r.action_values, PURCHASE_TYPES);
+      out.push({
+        account: account.name, currency: account.currency, id: String(r.campaign_id), name: String(r.campaign_name ?? ""),
+        status: status.get(String(r.campaign_id)) ?? "?",
+        depenses: spend, impressions: impr, frequence: n(r.frequency),
+        cpm: div(spend, impr, 1000), ctr: div(link, impr, 100), cpc: div(spend, link),
+        cpl: div(spend, leads), cpa: div(spend, purch), roas: purch != null ? div(rev, spend) : null,
+        leads, achats: purch,
+      });
+    }
+  }
+  return out;
 }
 
 type AdWithCreative = {

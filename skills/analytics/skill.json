@@ -1,0 +1,30 @@
+{
+  "id": "analytics",
+  "name": "Analytics / Data & Reporting",
+  "source": "MARKOVA — Analytics & Data Engine",
+  "description": "Plan de mesure, KPI par étape du funnel, GA4 / UTM / pixel, attribution, lecture de tendances et d'anomalies, fiabilité des écarts, tableaux de bord, rapports clients et comparaisons de périodes.",
+  "keywords": [
+    "analytics",
+    "ga4",
+    "google analytics",
+    "tracking",
+    "utm",
+    "pixel",
+    "api conversions",
+    "attribution",
+    "rapport",
+    "reporting",
+    "tableau de bord",
+    "dashboard",
+    "données",
+    "data",
+    "tendance",
+    "anomalie",
+    "comparaison",
+    "évolution",
+    "taux de conversion",
+    "mesure"
+  ],
+  "role": "skill",
+  "always_loaded": false
+}

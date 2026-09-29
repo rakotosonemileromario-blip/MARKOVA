@@ -6,10 +6,12 @@ import HomeStats from "@/components/HomeStats";
 import ProjectSwitcher from "@/components/ProjectSwitcher";
 import { Icon } from "@/components/ui";
 import { describeProjectRelations, getProjectContext, PROJECT_COOKIE } from "@/lib/projects";
+import { resolveTimezone, TZ_COOKIE } from "@/lib/timezone";
 
 export const dynamic = "force-dynamic";
 
 const BRIEFING = "Fais-moi mon briefing du jour : agenda, mails importants et tâches. Termine par les 3 priorités.";
+const GLOBAL_ANALYSIS = "Analyse globale : état actuel, problèmes détectés, priorités et actions proposées.";
 
 const MEMORY_ICONS: Record<string, string> = {
   projet: "apartment",
@@ -23,7 +25,9 @@ const MEMORY_ICONS: Record<string, string> = {
 
 export default async function HomePage() {
   const supabase = await createClient();
-  const { current, all } = await getProjectContext(supabase, (await cookies()).get(PROJECT_COOKIE)?.value);
+  const cookieStore = await cookies();
+  const { current, all } = await getProjectContext(supabase, cookieStore.get(PROJECT_COOKIE)?.value);
+  const timeZone = await resolveTimezone(supabase, cookieStore.get(TZ_COOKIE)?.value);
   const pid = current?.id ?? null;
   // Toutes les données de l'accueil sont celles du projet actif (ou de l'espace général).
   const filesQ = supabase.from("files").select("id", { count: "exact", head: true });
@@ -44,7 +48,7 @@ export default async function HomePage() {
   const relations = current ? describeProjectRelations(current, all) : "";
   const rules = mems.filter((m) => ["regle", "seuil", "objectif"].includes(m.category)).slice(0, 4);
   const googleAccounts = (google.data ?? []).map((g) => g.account_email as string);
-  const today = new Date().toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", timeZone: "Europe/Paris" });
+  const today = new Date().toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", timeZone });
 
   return (
     <div className="flex-1 overflow-y-auto">
@@ -130,10 +134,11 @@ export default async function HomePage() {
               </Link>
             )}
             <Link
-              href={`/chat?q=${encodeURIComponent("Analyse ma situation marketing actuelle et dis-moi ce qu'on doit faire maintenant.")}&send=1`}
+              href={`/chat?q=${encodeURIComponent(GLOBAL_ANALYSIS)}&send=1`}
               className="rounded-lg border border-line bg-soft h-11 px-3 inline-flex items-center gap-1.5 text-[13px] font-semibold"
+              title="État actuel, problèmes détectés, priorités et actions proposées, à partir de toutes les sources connectées"
             >
-              <Icon name="query_stats" className="text-[18px] text-cyan" /> Analyse
+              <Icon name="query_stats" className="text-[18px] text-cyan" /> Analyse globale
             </Link>
           </div>
         </section>
@@ -179,7 +184,7 @@ export default async function HomePage() {
                 <span className="flex-1 min-w-0">
                   <span className="block truncate text-[14px] font-semibold">{c.title}</span>
                   <span className="block text-[12px] text-muted">
-                    {new Date(c.updated_at).toLocaleString("fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Paris" })}
+                    {new Date(c.updated_at).toLocaleString("fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone })}
                   </span>
                 </span>
                 <Icon name="chevron_right" className="text-muted" />

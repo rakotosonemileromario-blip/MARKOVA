@@ -11,7 +11,9 @@ export function proposeActionTool({ google, meta }: { google: boolean; meta: boo
   if (!kinds.length) return null;
   const help = [
     google &&
-      "tache_supprimer (params: tache_id, liste_id), tache_terminer (params: tache_id, liste_id), tache_creer (params: titre, notes?, echeance? AAAA-MM-JJ, liste_id?) — ids issus de taches_lister, « compte » = adresse Google",
+      "tache_supprimer (params: tache_id, liste_id), tache_terminer (params: tache_id, liste_id), tache_creer (params: titre, notes?, echeance? AAAA-MM-JJ, liste_id?) — ids issus de taches_lister, « compte » = adresse Google ; " +
+        "sheets_ajouter_lignes (params: fichier_id, lignes [[…],[…]], feuille?) ajoute à la fin, sheets_ecrire (params: fichier_id, plage ex. « A1 » ou « Onglet!B2 », lignes, feuille?) remplace la plage, " +
+        "sheets_creer (params: titre, lignes?, feuille?) — fichier_id = id Drive issu de drive_rechercher, lignes = tableau de lignes de valeurs, « compte » = adresse Google",
     meta &&
       "meta_pause (params: objet_id), meta_activer (params: objet_id), meta_budget (params: objet_id, budget_quotidien en unités de la devise, ex. 25 pour 25 €) — objet_id = id de campagne, d'ensemble ou de publicité issu de meta_performances ; « compte » = « meta »",
   ]

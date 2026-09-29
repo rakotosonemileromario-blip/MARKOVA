@@ -1,5 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
-import { googleClients, googleConfigured, TASKS_WRITE_SCOPE } from "@/lib/google";
+import { cookies } from "next/headers";
+import { googleClients, googleConfigured, WRITE_SCOPES } from "@/lib/google";
+import { resolveTimezone, TZ_COOKIE } from "@/lib/timezone";
 import { Icon } from "@/components/ui";
 import DisconnectButton from "./DisconnectButton";
 import MetaConnect from "./MetaConnect";
@@ -30,6 +32,7 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
     .select("id, account_email, client_slot, scopes, timezone, updated_at")
     .eq("provider", "google")
     .order("created_at");
+  const timezone = await resolveTimezone(supabase, (await cookies()).get(TZ_COOKIE)?.value);
   const clients = googleClients();
   const configured = googleConfigured();
   const metaApp = await getMetaApp(supabase);
@@ -63,10 +66,11 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
               <Icon name="mail" className="text-[21px] text-accent-text" />
             </span>
             <div className="min-w-0">
-              <h2 className="font-semibold">Google — Gmail · Agenda · Drive · Tâches</h2>
+              <h2 className="font-semibold">Google — Gmail · Agenda · Drive · Tâches · Sheets</h2>
               <p className="text-[13px] text-muted mt-0.5">
-                MARKOVA lit mails, agenda, fichiers Drive et tâches de tous les comptes connectés. Il peut aussi supprimer, terminer ou
-                créer des tâches, mais uniquement après ton clic sur « Confirmer ». Il n'envoie aucun mail et ne modifie pas l'agenda.
+                MARKOVA lit mails, agenda, fichiers Drive et tâches de tous les comptes connectés. Il peut aussi gérer tes tâches et écrire
+                dans Google Sheets (ajouter des lignes, remplir une plage, créer un tableur), mais uniquement après ton clic sur « Confirmer ».
+                Il n'envoie aucun mail et ne modifie pas l'agenda.
               </p>
             </div>
           </div>
@@ -78,16 +82,16 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
                 <div className="flex-1 min-w-0">
                   <div className="truncate text-[14px] font-semibold">{a.account_email}</div>
                   <div className="text-[12px] text-muted">
-                    {a.timezone ?? "fuseau inconnu"} · depuis le {new Date(a.updated_at).toLocaleDateString("fr-FR")}
+                    fuseau {timezone} · depuis le {new Date(a.updated_at).toLocaleDateString("fr-FR")}
                   </div>
                 </div>
-                {!(a.scopes ?? []).includes(TASKS_WRITE_SCOPE) && (
+                {WRITE_SCOPES.some((s) => !(a.scopes ?? []).includes(s)) && (
                   <a
                     href={`/api/google/connect?client=${a.client_slot}`}
                     className="rounded-lg bg-warn-soft text-warn h-8 px-2.5 inline-flex items-center gap-1 text-[12px] font-semibold"
-                    title="Nécessaire pour que MARKOVA puisse supprimer / terminer / créer des tâches après ta confirmation"
+                    title="Nécessaire pour que MARKOVA puisse gérer tes tâches et écrire dans Google Sheets, toujours après ta confirmation"
                   >
-                    <Icon name="sync" className="text-[16px]" /> Autoriser la gestion des tâches
+                    <Icon name="sync" className="text-[16px]" /> Mettre à jour les autorisations
                   </a>
                 )}
                 <DisconnectButton id={a.id} email={a.account_email} />

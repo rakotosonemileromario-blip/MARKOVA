@@ -63,6 +63,13 @@ Puis ouvrir http://localhost:3000.
 3. *Environment Variables* : recopier les variables de `.env.local`.
 4. *Deploy*. L'adresse obtenue (ex. `markova.vercel.app`) sert aussi de base pour l'APK Android (V5).
 
+### Surveillance, alertes et rapport hebdomadaire
+- `vercel.json` déclare deux tâches planifiées gratuites : surveillance chaque jour (5 h UTC) et rapport chaque lundi (5 h 30 UTC).
+- Variables nécessaires dans Vercel : `SUPABASE_SERVICE_ROLE_KEY`, `CRON_SECRET`, `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`.
+- Page **Alertes** : règles de surveillance (CPL, CTR, ROAS…), notifications, activation du push sur chaque appareil, rapport « Générer maintenant ».
+- Le fuseau horaire est celui de l'appareil utilisé (PC ou téléphone), détecté automatiquement.
+- Google Sheets en écriture : activer « Google Sheets API » dans chaque projet Google Cloud, puis « Mettre à jour les autorisations » dans Connexions.
+
 ## Structure
 ```
 app/            pages (chat, fichiers, mémoire, compétences) et routes API

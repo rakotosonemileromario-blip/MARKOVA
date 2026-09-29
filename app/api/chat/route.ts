@@ -1,6 +1,6 @@
 import { requireUser } from "@/lib/supabase/server";
-import { loadAllSkills, selectSkills } from "@/lib/skills";
-import { buildSystemPrompt, VOICE_SUMMARY_PROMPT, type FileContext, type Memory } from "@/lib/agent";
+import { isGlobalAnalysis, loadAllSkills, selectSkills } from "@/lib/skills";
+import { buildSystemPrompt, GLOBAL_ANALYSIS_PROMPT, VOICE_SUMMARY_PROMPT, type FileContext, type Memory } from "@/lib/agent";
 import { generate, type Attachment, type Source, type ToolSet, type Turn } from "@/lib/llm";
 import { ACTION_KINDS, describeAction, getGoogleSessions, googleToolDefs, runGoogleTool } from "@/lib/google";
 import { describeMetaAction, getMetaSession, META_ACTION_KINDS, META_TOOLS, runMetaTool } from "@/lib/meta";
@@ -9,6 +9,9 @@ import { hasWebSearchProvider, searchWeb, webResultsToPrompt, webResultsToSource
 import { runWebTool, WEB_TOOLS } from "@/lib/webtools";
 import { cookies } from "next/headers";
 import { getProjectContext, linkedProjects, PROJECT_COOKIE, PROJECT_TOOLS, runProjectTool } from "@/lib/projects";
+import { resolveTimezone, TZ_COOKIE } from "@/lib/timezone";
+import { listWatchRules, runWatchTool, WATCH_TOOLS } from "@/lib/watch-tools";
+import { describeRule } from "@/lib/monitor";
 
 type ProposedAction = { id: string; kind: string; account_email: string; summary: string; reason: string | null; status: string };
 
@@ -30,7 +33,10 @@ export async function POST(req: Request) {
   const webSearch = Boolean(body.webSearch);
 
   // ─── Projet actif ──────────────────────────────────────────────
-  const cookieProject = (await cookies()).get(PROJECT_COOKIE)?.value ?? null;
+  const cookieStore = await cookies();
+  const cookieProject = cookieStore.get(PROJECT_COOKIE)?.value ?? null;
+  // Fuseau de l'appareil utilisé (PC ou téléphone).
+  const timezone = await resolveTimezone(supabase, cookieStore.get(TZ_COOKIE)?.value);
 
   // ─── Conversation ──────────────────────────────────────────────
   // Une conversation existante garde son projet ; une nouvelle prend le projet actif.
@@ -121,9 +127,10 @@ export async function POST(req: Request) {
   const previousUser = turns.filter((t) => t.role === "user").slice(-2, -1)[0]?.text ?? "";
   const activeSkills = selectSkills(allSkills, `${message}\n${previousUser}`, message);
 
-  const [googleAccounts, meta] = await Promise.all([
-    getGoogleSessions(supabase).catch(() => []),
+  const [googleAccounts, meta, watchRules] = await Promise.all([
+    getGoogleSessions(supabase, { timezone }).catch(() => []),
     getMetaSession(supabase).catch(() => null),
+    listWatchRules(supabase).catch(() => []),
   ]);
 
   // Actions proposées pendant ce tour : enregistrées « en attente », jamais exécutées ici.
@@ -159,18 +166,24 @@ export async function POST(req: Request) {
       const wanted = String(args.compte ?? "").toLowerCase();
       const candidates = googleAccounts.filter((a) => a.email.toLowerCase() === wanted);
       const pool = candidates.length ? candidates : googleAccounts;
+      let lastError = "";
       for (const acc of pool) {
         try {
           summary = await describeAction(acc, kind, params);
           accountLabel = acc.email;
           break;
-        } catch {
-          // tâche absente de ce compte : on essaie le suivant
+        } catch (err) {
+          // élément absent de ce compte : on essaie le suivant (en gardant la raison)
+          lastError = err instanceof Error ? err.message : String(err);
         }
       }
-      if (!accountLabel) return `Tâche introuvable (${JSON.stringify(params)}). Relis la liste avec taches_lister et réessaie.`;
-      if (kind === "tache_creer" && !candidates.length && googleAccounts.length > 1) {
-        return `Précise le compte pour créer la tâche : ${googleAccounts.map((a) => a.email).join(", ")}.`;
+      if (!accountLabel) {
+        return kind.startsWith("sheets_")
+          ? `Action Sheets impossible : ${lastError}. Vérifie fichier_id avec drive_rechercher et le format de « lignes ».`
+          : `Tâche introuvable (${JSON.stringify(params)}). Relis la liste avec taches_lister et réessaie.`;
+      }
+      if (kind.endsWith("_creer") && !candidates.length && googleAccounts.length > 1) {
+        return `Précise le « compte » Google pour cette création : ${googleAccounts.map((a) => a.email).join(", ")}.`;
       }
     }
 
@@ -204,6 +217,7 @@ export async function POST(req: Request) {
     defs: [
       ...WEB_TOOLS,
       ...PROJECT_TOOLS,
+      ...WATCH_TOOLS,
       ...(googleAccounts.length ? googleToolDefs(googleAccounts) : []),
       ...(meta ? META_TOOLS : []),
       ...(proposeTool ? [proposeTool] : []),
@@ -214,6 +228,8 @@ export async function POST(req: Request) {
       // Création / liaison / changement de projet : le navigateur rafraîchit son menu Projet.
       const proj = await runProjectTool(supabase, name, args, (activate) => emit({ t: "projects", v: activate ?? null }));
       if (proj !== null) return proj;
+      const watch = await runWatchTool(supabase, name, args);
+      if (watch !== null) return watch;
       if (name === "proposer_action") return proposeActions(args);
       if (meta) {
         const m = await runMetaTool(meta, name, args);
@@ -233,10 +249,10 @@ export async function POST(req: Request) {
     })),
     files: fileContexts,
     webSearch,
-    google: googleAccounts.length
-      ? { emails: googleAccounts.map((a) => a.email), timezone: googleAccounts[0].timezone }
-      : null,
+    timezone,
+    google: googleAccounts.length ? { emails: googleAccounts.map((a) => a.email) } : null,
     meta: meta ? { name: meta.name } : null,
+    watchRules: watchRules.map((r) => describeRule(r)),
     project: {
       current: projects.current,
       linked: linked.map((l) => ({ name: l.project.name, description: l.project.description, relation: l.relation })),
@@ -246,6 +262,8 @@ export async function POST(req: Request) {
 
   // Question posée au micro : la réponse se termine par un résumé d'actions à lire à voix haute.
   if (body.voice) system += VOICE_SUMMARY_PROMPT;
+  // « Analyse globale » : toutes les sources, structure État actuel / Problèmes / Priorités / Actions.
+  if (isGlobalAnalysis(message)) system += GLOBAL_ANALYSIS_PROMPT;
 
   // Recherche Web : Tavily si configuré (marche avec tous les modèles), sinon recherche Google intégrée à Gemini.
   let webSources: Source[] = [];

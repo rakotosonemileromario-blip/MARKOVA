@@ -132,7 +132,59 @@ create table if not exists public.custom_skills (
   updated_at     timestamptz not null default now()
 );
 
+-- ─── Réglages de l'utilisateur (fuseau de l'appareil, rapport hebdo) ───
+create table if not exists public.user_settings (
+  user_id         uuid primary key default auth.uid() references auth.users on delete cascade,
+  timezone        text,                               -- fuseau détecté sur le PC / téléphone
+  weekly_report   boolean not null default true,      -- rapport hebdomadaire du lundi
+  updated_at      timestamptz not null default now()
+);
+
+-- ─── Règles de surveillance (« préviens-moi si le CPL dépasse 12 € ») ───
+create table if not exists public.watch_rules (
+  id          uuid primary key default gen_random_uuid(),
+  user_id     uuid not null default auth.uid() references auth.users on delete cascade,
+  metric      text not null check (metric in ('cpl', 'cpa', 'cpc', 'cpm', 'ctr', 'roas', 'frequence', 'depenses')),
+  operator    text not null check (operator in ('>', '<')),
+  threshold   numeric not null,
+  period      text not null default 'last_7d' check (period in ('yesterday', 'last_3d', 'last_7d', 'last_14d', 'last_30d')),
+  scope       text,               -- null = toutes les campagnes actives ; sinon texte contenu dans le nom de campagne
+  label       text,               -- description lisible
+  active      boolean not null default true,
+  created_at  timestamptz not null default now()
+);
+
+-- ─── Notifications (alerte, planning, validation, rapport, problème) ───
+create table if not exists public.notifications (
+  id          uuid primary key default gen_random_uuid(),
+  user_id     uuid not null default auth.uid() references auth.users on delete cascade,
+  kind        text not null check (kind in ('alerte', 'planning', 'validation', 'rapport', 'probleme')),
+  title       text not null,
+  body        text not null default '',
+  link        text,
+  dedupe_key  text,                -- évite d'envoyer deux fois la même alerte
+  read_at     timestamptz,
+  created_at  timestamptz not null default now(),
+  unique (user_id, dedupe_key)
+);
+create index if not exists notifications_user_created on public.notifications (user_id, created_at desc);
+
+-- ─── Notifications push (PC / téléphone) ───
+create table if not exists public.push_subscriptions (
+  id          uuid primary key default gen_random_uuid(),
+  user_id     uuid not null default auth.uid() references auth.users on delete cascade,
+  endpoint    text not null unique,
+  p256dh      text not null,
+  auth        text not null,
+  device      text,
+  created_at  timestamptz not null default now()
+);
+
 -- ─── RLS ────────────────────────────────────────────────────────
+alter table public.user_settings      enable row level security;
+alter table public.watch_rules        enable row level security;
+alter table public.notifications      enable row level security;
+alter table public.push_subscriptions enable row level security;
 alter table public.conversations enable row level security;
 alter table public.messages      enable row level security;
 alter table public.memories      enable row level security;
@@ -145,7 +197,8 @@ alter table public.custom_skills enable row level security;
 do $$
 declare t text;
 begin
-  foreach t in array array['projects', 'conversations', 'messages', 'memories', 'files', 'integrations', 'actions', 'custom_skills'] loop
+  foreach t in array array['projects', 'conversations', 'messages', 'memories', 'files', 'integrations', 'actions', 'custom_skills',
+                           'user_settings', 'watch_rules', 'notifications', 'push_subscriptions'] loop
     execute format('drop policy if exists "owner_all" on public.%I', t);
     execute format(
       'create policy "owner_all" on public.%I for all to authenticated

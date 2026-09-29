@@ -1,0 +1,26 @@
+{
+  "id": "marque-positionnement",
+  "name": "Marque / Positionnement & Personas",
+  "source": "MARKOVA — Brand & Positioning Engine",
+  "description": "Positionnement, proposition de valeur, segmentation, personas et jobs-to-be-done, plateforme de marque, ton de voix, architecture de messages, différenciation et cohérence de marque sur tous les canaux.",
+  "keywords": [
+    "marque",
+    "branding",
+    "positionnement",
+    "proposition de valeur",
+    "persona",
+    "cible",
+    "segmentation",
+    "plateforme de marque",
+    "identité",
+    "voix de marque",
+    "valeurs",
+    "mission",
+    "différenciation",
+    "usp",
+    "jobs to be done",
+    "image de marque"
+  ],
+  "role": "skill",
+  "always_loaded": false
+}

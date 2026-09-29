@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { Brand, Icon } from "./ui";
 import ProjectSwitcher from "./ProjectSwitcher";
 import { getCurrentProjectId } from "@/lib/project-client";
+import { UnreadBadge, useUnreadCount } from "./NotificationBell";
 
 type Conv = { id: string; title: string; updated_at: string };
 
@@ -18,6 +19,7 @@ export const NAV = [
   { href: "/projets", label: "Projets", icon: "folder_special" },
   { href: "/chat", label: "Analyser", icon: "auto_awesome" },
   { href: "/fichiers", label: "Fichiers", icon: "folder_open" },
+  { href: "/notifications", label: "Alertes", icon: "notifications" },
   { href: "/memoire", label: "Mémoire", icon: "memory" },
   { href: "/competences", label: "Compétences", icon: "extension" },
   { href: "/connexions", label: "Connexions", icon: "hub" },
@@ -36,6 +38,7 @@ export function newChat() {
 export default function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const pathname = usePathname();
   const [convs, setConvs] = useState<Conv[]>([]);
+  const unread = useUnreadCount();
 
   // Historique du projet actif uniquement.
   const load = useCallback(async () => {
@@ -109,6 +112,7 @@ export default function Sidebar({ open, onClose }: { open: boolean; onClose: () 
                 {active && <span className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full bg-cyan shadow-[0_0_10px_#22d3ee]" />}
                 <Icon name={n.icon} className="text-[19px]" filled={active} />
                 {n.label}
+                {n.href === "/notifications" && <UnreadBadge count={unread} />}
               </Link>
             );
           })}

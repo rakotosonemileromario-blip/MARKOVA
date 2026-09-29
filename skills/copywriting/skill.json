@@ -1,0 +1,27 @@
+{
+  "id": "copywriting",
+  "name": "Copywriting / Rédaction persuasive",
+  "source": "MARKOVA — Copywriting Engine",
+  "description": "Rédaction persuasive pour pages de vente, landing pages, pubs, emails et posts : recherche du message, promesse, bénéfices, preuves, objections, frameworks (AIDA, PAS, BAB, 4U), titres, CTA et relecture qualité.",
+  "keywords": [
+    "copywriting",
+    "copy",
+    "rédaction",
+    "texte de vente",
+    "page de vente",
+    "slogan",
+    "accroche",
+    "headline",
+    "promesse",
+    "argumentaire",
+    "bénéfices",
+    "objections",
+    "aida",
+    "storytelling",
+    "réécris",
+    "reformule",
+    "ton de voix"
+  ],
+  "role": "skill",
+  "always_loaded": false
+}

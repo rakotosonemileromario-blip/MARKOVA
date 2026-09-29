@@ -40,11 +40,9 @@ export async function loadSkills(): Promise<Skill[]> {
 }
 
 /** Compétences du dossier /skills + compétences ajoutées par l'utilisateur (table custom_skills). */
-export async function loadAllSkills(supabase: SupabaseClient): Promise<Skill[]> {
-  const [base, { data: custom }] = await Promise.all([
-    loadSkills(),
-    supabase.from("custom_skills").select("id, name, description, keywords, prompt, always_loaded, source_name").eq("active", true),
-  ]);
+export async function loadAllSkills(supabase: SupabaseClient, userId?: string): Promise<Skill[]> {
+  const q = supabase.from("custom_skills").select("id, name, description, keywords, prompt, always_loaded, source_name").eq("active", true);
+  const [base, { data: custom }] = await Promise.all([loadSkills(), userId ? q.eq("user_id", userId) : q]);
   const added: Skill[] = (custom ?? []).map((c) => ({
     id: `perso-${String(c.id).slice(0, 8)}`,
     name: String(c.name),
@@ -75,11 +73,13 @@ function hasWord(text: string, word: string) {
 
 const GLOBAL_TRIGGERS = ["analyse globale", "analyse tout", "analyse complete", "tout analyser"];
 
+export const isGlobalAnalysis = (text: string) => GLOBAL_TRIGGERS.some((t) => normalize(text).includes(t));
+
 // Demandes d'assistant personnel (agenda, mails, tâches…) : aucune méthode marketing à charger.
 const ASSISTANT_RE =
   /\b(agenda|calendrier google|rendez-vous|rdv|reunions?|mails?|e-?mails?|gmail|boite|inbox|taches?|todo|drive|briefing|demain|aujourd'?hui|cette semaine|planning du jour)\b/;
 const MARKETING_RE =
-  /\b(marketing|campagnes?|pubs?|publicites?|ads|cpl|cpa|ctr|cpm|roas|budget|kpi|contenus?|posts?|calendrier editorial|strategie|leads?|conversion|creatifs?|audience|seo|funnel)\b/;
+  /\b(marketing|campagnes?|pubs?|publicites?|ads|cpl|cpa|ctr|cpm|roas|budget|kpi|contenus?|posts?|calendrier editorial|strategie|leads?|conversion|creatifs?|audience|seo|funnel|newsletters?|emailing|sequences?|crm|prospects?|pipeline|sea|analytics|ga4|referencement|mots?-cles?|concurrents?|veille|copywriting|landing|tunnel|cro|marque|branding|positionnement|personas?|reseaux sociaux|community)\b/;
 
 /**
  * Choisit les compétences à charger : le noyau (always_loaded) + les compétences

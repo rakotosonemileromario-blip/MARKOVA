@@ -23,7 +23,13 @@ export async function proxy(request: NextRequest) {
   const { data } = await supabase.auth.getUser();
   const path = request.nextUrl.pathname;
   // Pages publiques : connexion + pages légales exigées par Meta / Google.
-  const isPublic = path.startsWith("/login") || path.startsWith("/confidentialite") || path.startsWith("/suppression-donnees");
+  // /api/cron : tâches planifiées, protégées par CRON_SECRET (pas de session). /sw.js : service worker des notifications.
+  const isPublic =
+    path.startsWith("/login") ||
+    path.startsWith("/confidentialite") ||
+    path.startsWith("/suppression-donnees") ||
+    path.startsWith("/api/cron/") ||
+    path === "/sw.js";
 
   if (!data.user && !isPublic) {
     if (path.startsWith("/api/")) {

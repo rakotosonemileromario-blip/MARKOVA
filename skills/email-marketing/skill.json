@@ -1,0 +1,27 @@
+{
+  "id": "email-marketing",
+  "name": "Email marketing / Newsletters & Automations",
+  "source": "MARKOVA — Email & Lifecycle Engine",
+  "description": "Stratégie emailing, newsletters, séquences automatisées (bienvenue, nurturing, relance, réactivation), objets et preheaders, segmentation, délivrabilité, tests A/B et KPI (ouverture, clic, désinscription).",
+  "keywords": [
+    "emailing",
+    "email marketing",
+    "newsletter",
+    "séquence",
+    "nurturing",
+    "automation",
+    "automatisation email",
+    "objet",
+    "preheader",
+    "taux d'ouverture",
+    "délivrabilité",
+    "mailchimp",
+    "brevo",
+    "klaviyo",
+    "campagne email",
+    "liste email",
+    "base email"
+  ],
+  "role": "skill",
+  "always_loaded": false
+}

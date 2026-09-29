@@ -2,16 +2,19 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { decrypt, encrypt } from "./crypto";
 import { detectKind, extractContent } from "./files";
 
-// Lecture seule pour Gmail, Agenda et Drive. Google Tasks en lecture/écriture : les modifications
+// Lecture seule pour Gmail, Agenda et Drive. Google Tasks et Google Sheets en écriture : les modifications
 // ne sont faites qu'après validation de l'utilisateur (table « actions »).
 export const TASKS_WRITE_SCOPE = "https://www.googleapis.com/auth/tasks";
+export const SHEETS_WRITE_SCOPE = "https://www.googleapis.com/auth/spreadsheets";
+/** Autorisations d'écriture à redemander aux comptes connectés avant leur ajout. */
+export const WRITE_SCOPES = [TASKS_WRITE_SCOPE, SHEETS_WRITE_SCOPE];
 export const GOOGLE_SCOPES = [
   "openid",
   "email",
   "https://www.googleapis.com/auth/gmail.readonly",
   "https://www.googleapis.com/auth/calendar.readonly",
   "https://www.googleapis.com/auth/drive.readonly",
-  TASKS_WRITE_SCOPE,
+  ...WRITE_SCOPES,
 ];
 
 // ─── Clients OAuth ───────────────────────────────────────────────
@@ -83,14 +86,19 @@ export type GoogleSession = { email: string; timezone: string; token: () => Prom
 
 const accessCache = new Map<string, { token: string; exp: number }>();
 
-/** Tous les comptes Google connectés de l'utilisateur (chacun avec son client OAuth). */
-export async function getGoogleSessions(supabase: SupabaseClient): Promise<GoogleSession[]> {
+/**
+ * Tous les comptes Google connectés de l'utilisateur (chacun avec son client OAuth).
+ * timezone : fuseau de l'appareil de l'utilisateur (prioritaire sur celui de l'agenda Google).
+ * userId : obligatoire avec le client « service » des tâches planifiées (pas de RLS).
+ */
+export async function getGoogleSessions(supabase: SupabaseClient, opts: { timezone?: string; userId?: string } = {}): Promise<GoogleSession[]> {
   if (!googleConfigured()) return [];
-  const { data } = await supabase
+  const q = supabase
     .from("integrations")
     .select("id, client_slot, account_email, refresh_token_enc, timezone")
     .eq("provider", "google")
     .order("created_at");
+  const { data } = await (opts.userId ? q.eq("user_id", opts.userId) : q);
 
   return (data ?? []).flatMap((row) => {
     const client = googleClient(row.client_slot);
@@ -98,7 +106,7 @@ export async function getGoogleSessions(supabase: SupabaseClient): Promise<Googl
     return [
       {
         email: row.account_email as string,
-        timezone: row.timezone || "Europe/Paris",
+        timezone: opts.timezone || row.timezone || "Europe/Paris",
         token: async () => {
           const cached = accessCache.get(row.id);
           if (cached && cached.exp > Date.now() + 60_000) return cached.token;
@@ -357,20 +365,69 @@ async function listTasks(s: GoogleSession, args: { inclure_terminees?: boolean }
   return out.length ? out.join("\n") : "Aucune tâche en cours.";
 }
 
+/** Titres des tâches en retard, du jour et de demain (surveillance automatique). */
+export async function taskDeadlines(s: GoogleSession) {
+  const { items: lists } = await gget<{ items?: { id: string }[] }>(s, "https://tasks.googleapis.com/tasks/v1/users/@me/lists?maxResults=20");
+  const today = todayIn(s.timezone);
+  const tomorrow = todayIn(s.timezone, 1);
+  const out = { enRetard: [] as string[], aujourdhui: [] as string[], demain: [] as string[] };
+  for (const l of lists ?? []) {
+    const { items } = await gget<{ items?: GTask[] }>(s, `https://tasks.googleapis.com/tasks/v1/lists/${l.id}/tasks?maxResults=100&showCompleted=false`);
+    for (const t of items ?? []) {
+      const due = t.due?.slice(0, 10);
+      const title = t.title || "(sans titre)";
+      if (!due) continue;
+      if (due < today) out.enRetard.push(title);
+      else if (due === today) out.aujourdhui.push(title);
+      else if (due === tomorrow) out.demain.push(title);
+    }
+  }
+  return out;
+}
+
 // ─── Actions validées (écriture) ─────────────────────────────────
-export const ACTION_KINDS = ["tache_supprimer", "tache_terminer", "tache_creer"] as const;
+export const ACTION_KINDS = ["tache_supprimer", "tache_terminer", "tache_creer", "sheets_ajouter_lignes", "sheets_ecrire", "sheets_creer"] as const;
 export type ActionKind = (typeof ACTION_KINDS)[number];
 
-async function gsend(s: GoogleSession, method: string, url: string, body?: unknown) {
+async function gsend<T = unknown>(s: GoogleSession, method: string, url: string, body?: unknown): Promise<T | null> {
   const res = await fetch(url, {
     method,
     headers: { Authorization: `Bearer ${await s.token()}`, ...(body ? { "Content-Type": "application/json" } : {}) },
     body: body ? JSON.stringify(body) : undefined,
   });
-  if (res.status === 403 && (await res.clone().text()).includes("insufficient")) {
-    throw new Error("droits insuffisants : reconnecte ce compte dans Connexions pour autoriser la gestion des tâches");
+  if (res.status === 403 && /insufficient/i.test(await res.clone().text())) {
+    throw new Error("droits insuffisants : dans Connexions, clique sur « Mettre à jour les autorisations » pour ce compte");
   }
   if (!res.ok && res.status !== 204) throw new Error(`Google HTTP ${res.status}: ${(await res.text()).slice(0, 160)}`);
+  return res.status === 204 ? null : ((await res.json().catch(() => null)) as T | null);
+}
+
+// ─── Google Sheets ───────────────────────────────────────────────
+const MAX_SHEET_ROWS = 1000;
+
+/** Lignes envoyées par l'agent → tableau de lignes de valeurs simples (texte, nombre, booléen). */
+function sheetRows(raw: unknown): (string | number | boolean)[][] {
+  if (!Array.isArray(raw) || !raw.length) throw new Error("« lignes » doit être un tableau de lignes, ex. [[\"Date\", \"CPL\"], [\"2026-09-29\", 12.4]]");
+  if (raw.length > MAX_SHEET_ROWS) throw new Error(`trop de lignes (max ${MAX_SHEET_ROWS})`);
+  return raw.map((row) =>
+    (Array.isArray(row) ? row : [row]).map((v) => (typeof v === "number" || typeof v === "boolean" ? v : v == null ? "" : String(v))),
+  );
+}
+
+const sheetRange = (params: Record<string, unknown>, fallback: string) => {
+  const tab = typeof params.feuille === "string" && params.feuille.trim() ? `'${params.feuille.replace(/'/g, "''")}'!` : "";
+  const range = typeof params.plage === "string" && params.plage.trim() ? params.plage.trim() : fallback;
+  return range.includes("!") ? range : `${tab}${range}`;
+};
+
+const preview = (rows: (string | number | boolean)[][]) =>
+  rows.slice(0, 2).map((r) => r.slice(0, 6).join(" | ")).join(" / ") + (rows.length > 2 ? " / …" : "");
+
+async function sheetTitle(s: GoogleSession, id: unknown) {
+  if (typeof id !== "string" || !id) throw new Error("fichier_id manquant (id Drive du tableur)");
+  const f = await gget<DriveFile>(s, `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}?fields=id,name,mimeType&supportsAllDrives=true`);
+  if (f.mimeType !== "application/vnd.google-apps.spreadsheet") throw new Error(`« ${f.name} » n'est pas un Google Sheets`);
+  return f.name;
 }
 
 /**
@@ -378,6 +435,17 @@ async function gsend(s: GoogleSession, method: string, url: string, body?: unkno
  * plutôt que du texte écrit par l'IA : l'utilisateur voit exactement ce qui sera modifié.
  */
 export async function describeAction(s: GoogleSession, kind: string, params: Record<string, unknown>): Promise<string> {
+  if (kind === "sheets_creer") {
+    const rows = params.lignes ? sheetRows(params.lignes) : [];
+    return `Créer le Google Sheets « ${String(params.titre ?? "Sans titre")} »${rows.length ? ` avec ${rows.length} ligne(s) : ${preview(rows)}` : ""}`;
+  }
+  if (kind === "sheets_ajouter_lignes" || kind === "sheets_ecrire") {
+    const title = await sheetTitle(s, params.fichier_id);
+    const rows = sheetRows(params.lignes);
+    return kind === "sheets_ajouter_lignes"
+      ? `Ajouter ${rows.length} ligne(s) à la fin de « ${title} »${params.feuille ? ` (onglet ${params.feuille})` : ""} : ${preview(rows)}`
+      : `Écrire ${rows.length} ligne(s) dans « ${title} », plage ${sheetRange(params, "A1")} (remplace le contenu) : ${preview(rows)}`;
+  }
   if (kind === "tache_creer") {
     const due = typeof params.echeance === "string" ? ` · échéance ${params.echeance}` : "";
     return `Créer la tâche « ${String(params.titre ?? "")} »${due}`;
@@ -407,6 +475,45 @@ export async function executeGoogleAction(s: GoogleSession, kind: string, params
       const due = typeof params.echeance === "string" && /^\d{4}-\d{2}-\d{2}$/.test(params.echeance) ? `${params.echeance}T00:00:00.000Z` : undefined;
       await gsend(s, "POST", `https://tasks.googleapis.com/tasks/v1/lists/${list}/tasks`, { title: params.titre, notes: params.notes, due });
       return "Tâche créée.";
+    }
+    case "sheets_ajouter_lignes": {
+      const id = encodeURIComponent(String(params.fichier_id ?? ""));
+      const range = encodeURIComponent(sheetRange(params, "A1"));
+      const r = await gsend<{ updates?: { updatedRows?: number; updatedRange?: string } }>(
+        s,
+        "POST",
+        `https://sheets.googleapis.com/v4/spreadsheets/${id}/values/${range}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
+        { values: sheetRows(params.lignes) },
+      );
+      return `${r?.updates?.updatedRows ?? "?"} ligne(s) ajoutée(s) (${r?.updates?.updatedRange ?? ""}).`;
+    }
+    case "sheets_ecrire": {
+      const id = encodeURIComponent(String(params.fichier_id ?? ""));
+      const range = encodeURIComponent(sheetRange(params, "A1"));
+      const r = await gsend<{ updatedCells?: number; updatedRange?: string }>(
+        s,
+        "PUT",
+        `https://sheets.googleapis.com/v4/spreadsheets/${id}/values/${range}?valueInputOption=USER_ENTERED`,
+        { values: sheetRows(params.lignes) },
+      );
+      return `${r?.updatedCells ?? "?"} cellule(s) écrite(s) (${r?.updatedRange ?? ""}).`;
+    }
+    case "sheets_creer": {
+      const tab = typeof params.feuille === "string" && params.feuille.trim() ? params.feuille.trim() : "Feuille 1";
+      const created = await gsend<{ spreadsheetId: string; spreadsheetUrl: string }>(s, "POST", "https://sheets.googleapis.com/v4/spreadsheets", {
+        properties: { title: String(params.titre ?? "MARKOVA") },
+        sheets: [{ properties: { title: tab } }],
+      });
+      if (!created) throw new Error("création refusée par Google");
+      if (params.lignes) {
+        await gsend(
+          s,
+          "PUT",
+          `https://sheets.googleapis.com/v4/spreadsheets/${created.spreadsheetId}/values/${encodeURIComponent(`'${tab.replace(/'/g, "''")}'!A1`)}?valueInputOption=USER_ENTERED`,
+          { values: sheetRows(params.lignes) },
+        );
+      }
+      return `Google Sheets créé : ${created.spreadsheetUrl}`;
     }
     default:
       throw new Error(`Type d'action non pris en charge : ${kind}`);

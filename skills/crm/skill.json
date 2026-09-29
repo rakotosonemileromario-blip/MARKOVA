@@ -1,0 +1,28 @@
+{
+  "id": "crm",
+  "name": "CRM / Leads & Pipeline",
+  "source": "MARKOVA — CRM & Lead Management Engine",
+  "description": "Parcours et qualification des leads, scoring, pipeline commercial, délais de traitement, relances, segmentation, réactivation, alignement marketing ↔ ventes et coût réel par client.",
+  "keywords": [
+    "crm",
+    "lead",
+    "prospect",
+    "pipeline",
+    "qualification",
+    "scoring",
+    "relance",
+    "closing",
+    "taux de closing",
+    "commercial",
+    "ventes",
+    "fichier clients",
+    "segmentation",
+    "hubspot",
+    "pipedrive",
+    "réactivation",
+    "rendez-vous qualifié",
+    "suivi des leads"
+  ],
+  "role": "skill",
+  "always_loaded": false
+}

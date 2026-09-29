@@ -1,0 +1,30 @@
+{
+  "id": "social-media",
+  "name": "Social Media / Community Management",
+  "source": "MARKOVA — Social Media & Community Engine",
+  "description": "Stratégie par réseau (Facebook, Instagram, TikTok, LinkedIn, YouTube), formats et algorithmes, analyse des performances organiques, engagement, modération, réponses aux commentaires et messages, gestion de crise, UGC et influence.",
+  "keywords": [
+    "réseaux sociaux",
+    "social media",
+    "community",
+    "community management",
+    "communauté",
+    "engagement",
+    "abonnés",
+    "followers",
+    "instagram",
+    "tiktok",
+    "linkedin",
+    "facebook",
+    "reels",
+    "stories",
+    "commentaires",
+    "modération",
+    "bad buzz",
+    "influenceur",
+    "ugc",
+    "algorithme"
+  ],
+  "role": "skill",
+  "always_loaded": false
+}

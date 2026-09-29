@@ -1,0 +1,28 @@
+{
+  "id": "google-ads",
+  "name": "Google Ads / SEA",
+  "source": "MARKOVA — Search Ads (SEA) Engine",
+  "description": "Campagnes Google Ads (Search, Performance Max, Display, YouTube, Demand Gen) : structure, mots-clés et types de correspondance, négatifs, annonces RSA, enchères, Quality Score, budgets, assets et optimisation.",
+  "keywords": [
+    "google ads",
+    "sea",
+    "adwords",
+    "search ads",
+    "performance max",
+    "pmax",
+    "quality score",
+    "enchère",
+    "enchères",
+    "mots-clés négatifs",
+    "mot-clé négatif",
+    "rsa",
+    "annonce responsive",
+    "extensions",
+    "youtube ads",
+    "display",
+    "demand gen",
+    "campagne search"
+  ],
+  "role": "skill",
+  "always_loaded": false
+}

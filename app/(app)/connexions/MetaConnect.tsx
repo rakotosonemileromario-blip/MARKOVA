@@ -189,9 +189,9 @@ function SetupWizard() {
           <span className={step}>3</span>
           <form onSubmit={save} className="text-[13px] min-w-0 flex-1 space-y-2">
             <div className="font-semibold">Coller les identifiants (Paramètres de l'app → Général)</div>
-            <input value={appId} onChange={(e) => setAppId(e.target.value)} placeholder="ID de l'app" inputMode="numeric" className={input} />
-            <input value={appSecret} onChange={(e) => setAppSecret(e.target.value)} placeholder="Clé secrète de l'app" type="password" className={input} />
-            <input value={configId} onChange={(e) => setConfigId(e.target.value)} placeholder="ID de configuration (recommandé)" inputMode="numeric" className={input} />
+            <input value={appId} onChange={(e) => setAppId(e.target.value)} placeholder="ID de l'app (chiffres, ex. 1234567890123456)" inputMode="numeric" autoComplete="off" name="meta-app-id" className={input} />
+            <input value={appSecret} onChange={(e) => setAppSecret(e.target.value)} placeholder="Clé secrète de l'app (pas votre mot de passe Facebook)" type="password" autoComplete="new-password" name="meta-app-secret" className={input} />
+            <input value={configId} onChange={(e) => setConfigId(e.target.value)} placeholder="ID de configuration (facultatif)" inputMode="numeric" autoComplete="off" name="meta-config-id" className={input} />
             {error && <p className="text-[12px] text-danger">{error}</p>}
             <button disabled={busy || !appId || !appSecret} className="w-full rounded-lg bg-accent-strong text-white h-10 text-[13px] font-semibold disabled:opacity-50">
               {busy ? "Vérification auprès de Meta…" : "Enregistrer et afficher le bouton Facebook"}

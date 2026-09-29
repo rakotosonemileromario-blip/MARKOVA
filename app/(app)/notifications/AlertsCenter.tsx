@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Icon } from "@/components/ui";
 import { NOTIFICATIONS_EVENT } from "@/components/NotificationBell";
-import { describeRule, METRICS, PERIODS } from "@/lib/watch-rules";
+import RuleBuilder from "./RuleBuilder";
 
 type Notif = { id: string; kind: string; title: string; body: string; link: string | null; read_at: string | null; created_at: string };
 type Pending = { id: string; summary: string; conversation_id: string | null; created_at: string };
@@ -19,8 +19,6 @@ const KINDS: Record<string, { icon: string; cls: string; label: string }> = {
   probleme: { icon: "warning", cls: "text-warn bg-warn-soft", label: "Problème" },
 };
 
-const input = "h-10 rounded-lg border border-line bg-soft px-3 text-[14px] outline-none focus:border-accent";
-
 function urlBase64ToUint8Array(base64: string) {
   const pad = "=".repeat((4 - (base64.length % 4)) % 4);
   const raw = atob((base64 + pad).replace(/-/g, "+").replace(/_/g, "/"));
@@ -32,6 +30,7 @@ export default function AlertsCenter(props: {
   pendingActions: Pending[];
   followups: { id: string; due_at: string; instruction: string; conversation_id: string | null }[];
   rules: { id: string; text: string }[];
+  accounts: { facebook: string[]; instagram: string[] };
   weeklyReport: boolean;
   timezone: string;
   pushReady: boolean;
@@ -43,7 +42,6 @@ export default function AlertsCenter(props: {
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
   const [push, setPush] = useState<"inconnu" | "actif" | "inactif" | "bloque" | "indisponible">("inconnu");
   const [weekly, setWeekly] = useState(props.weeklyReport);
-  const [rule, setRule] = useState({ metric: "cpl", operator: ">", threshold: "", period: "last_7d", scope: "" });
 
   const unread = props.notifications.filter((n) => !n.read_at).length;
 
@@ -145,17 +143,6 @@ export default function AlertsCenter(props: {
     run("del", async () => {
       await supabase.from("notifications").delete().eq("id", id);
       return "Notification supprimée.";
-    });
-
-  const addRule = () =>
-    run("rule", async () => {
-      const threshold = Number(rule.threshold.replace(",", "."));
-      if (!Number.isFinite(threshold) || rule.threshold === "") throw new Error("Indique un seuil chiffré.");
-      const r = { metric: rule.metric, operator: rule.operator as ">" | "<", threshold, period: rule.period, scope: rule.scope.trim() || null };
-      const { error } = await supabase.from("watch_rules").insert({ ...r, label: describeRule(r) });
-      if (error) throw new Error(error.message);
-      setRule((x) => ({ ...x, threshold: "", scope: "" }));
-      return `Règle ajoutée : ${describeRule(r)}.`;
     });
 
   const removeRule = (id: string) =>
@@ -328,59 +315,30 @@ export default function AlertsCenter(props: {
         {/* Règles de surveillance */}
         <section className="card p-4">
           <h2 className="font-semibold flex items-center gap-2">
-            <Icon name="visibility" className="text-[19px] text-cyan" /> Règles de surveillance (campagnes Meta)
+            <Icon name="visibility" className="text-[19px] text-cyan" /> Règles de surveillance
           </h2>
           <p className="text-[12px] text-muted mt-1">
-            Vérifiées chaque matin sur les campagnes actives. Tu peux aussi le dire dans le chat : « préviens-moi si le CPL dépasse 12 € ».
+            Pubs Meta, pages Facebook et Instagram, vérifiées chaque matin. Tu peux aussi le dire dans le chat : « préviens-moi si le CPL dépasse 12 € » ou « alerte-moi
+            si un post Jokenay dépasse 100 commentaires ».
           </p>
           <ul className="mt-3 space-y-2">
-            {props.rules.length === 0 && <li className="text-[13px] text-muted">Aucune règle.</li>}
+            {props.rules.length === 0 && <li className="text-[13px] text-muted">Aucune règle pour l'instant.</li>}
             {props.rules.map((r) => (
-              <li key={r.id} className="flex items-center gap-2 rounded-lg bg-soft border border-line px-3 py-2 text-[13px]">
-                <Icon name="speed" className="text-[17px] text-muted" />
-                <span className="flex-1">{r.text}</span>
-                <button onClick={() => removeRule(r.id)} className="text-muted hover:text-danger" aria-label="Supprimer la règle">
+              <li key={r.id} className="flex items-start gap-2 rounded-lg bg-soft border border-line px-3 py-2 text-[13px]">
+                <span className="flex-1 min-w-0 break-words leading-snug">{r.text}</span>
+                <button onClick={() => removeRule(r.id)} className="shrink-0 text-muted hover:text-danger p-0.5" aria-label="Supprimer la règle">
                   <Icon name="delete" className="text-[17px]" />
                 </button>
               </li>
             ))}
           </ul>
-          <div className="mt-3 grid grid-cols-2 sm:grid-cols-[1fr_auto_1fr_1.3fr] gap-2">
-            <select value={rule.metric} onChange={(e) => setRule({ ...rule, metric: e.target.value })} className={input} aria-label="Indicateur">
-              {Object.entries(METRICS).map(([k, m]) => (
-                <option key={k} value={k}>
-                  {m.label}
-                </option>
-              ))}
-            </select>
-            <select value={rule.operator} onChange={(e) => setRule({ ...rule, operator: e.target.value })} className={input} aria-label="Condition">
-              <option value=">">au-dessus de</option>
-              <option value="<">en dessous de</option>
-            </select>
-            <input
-              value={rule.threshold}
-              onChange={(e) => setRule({ ...rule, threshold: e.target.value })}
-              inputMode="decimal"
-              placeholder={METRICS[rule.metric].unit === "%" ? "Seuil en %" : METRICS[rule.metric].unit === "x" ? "Seuil (ex. 2)" : "Seuil (ex. 12)"}
-              className={input}
-            />
-            <select value={rule.period} onChange={(e) => setRule({ ...rule, period: e.target.value })} className={input} aria-label="Période">
-              {Object.entries(PERIODS).map(([k, label]) => (
-                <option key={k} value={k}>
-                  {label}
-                </option>
-              ))}
-            </select>
-            <input
-              value={rule.scope}
-              onChange={(e) => setRule({ ...rule, scope: e.target.value })}
-              placeholder="Campagnes contenant… (vide = toutes)"
-              className={`${input} col-span-2 sm:col-span-3`}
-            />
-            <button onClick={addRule} disabled={busy !== null} className="rounded-lg bg-accent-strong text-white h-10 px-3 text-[13px] font-semibold col-span-2 sm:col-span-1 disabled:opacity-60">
-              Ajouter la règle
-            </button>
-          </div>
+          <RuleBuilder
+            accounts={props.accounts}
+            onDone={(text, ok) => {
+              setMessage({ ok, text });
+              if (ok) refresh();
+            }}
+          />
         </section>
 
         {/* Rapport hebdomadaire */}

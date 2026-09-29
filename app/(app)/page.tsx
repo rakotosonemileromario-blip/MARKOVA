@@ -64,7 +64,7 @@ export default async function HomePage() {
         </div>
 
         {/* Espace de travail */}
-        <section className="card is-active p-4 bg-gradient-to-br from-soft to-panel">
+        <section className="card is-active p-4 bg-gradient-to-br from-soft to-panel z-30">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <h1 className="text-[26px] font-bold tracking-tight truncate flex items-center gap-1.5">

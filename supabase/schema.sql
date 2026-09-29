@@ -154,6 +154,19 @@ create table if not exists public.watch_rules (
   created_at  timestamptz not null default now()
 );
 
+-- Règles étendues aux réseaux sociaux : source (pubs Meta, page Facebook, Instagram),
+-- nouvelles métriques (likes, commentaires, partages, vues, publications) et mode de calcul.
+alter table public.watch_rules add column if not exists source text not null default 'ads';
+alter table public.watch_rules add column if not exists aggregation text not null default 'total';
+alter table public.watch_rules drop constraint if exists watch_rules_metric_check;
+alter table public.watch_rules add constraint watch_rules_metric_check check (metric in (
+  'cpl', 'cpa', 'cpc', 'cpm', 'ctr', 'roas', 'frequence', 'depenses', 'leads', 'clics', 'impressions',
+  'likes', 'commentaires', 'partages', 'vues', 'publications'));
+alter table public.watch_rules drop constraint if exists watch_rules_source_check;
+alter table public.watch_rules add constraint watch_rules_source_check check (source in ('ads', 'facebook', 'instagram'));
+alter table public.watch_rules drop constraint if exists watch_rules_aggregation_check;
+alter table public.watch_rules add constraint watch_rules_aggregation_check check (aggregation in ('total', 'publication'));
+
 -- ─── Notifications (alerte, planning, validation, rapport, problème) ───
 create table if not exists public.notifications (
   id          uuid primary key default gen_random_uuid(),

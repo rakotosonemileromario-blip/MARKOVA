@@ -307,7 +307,8 @@ function Columns({ spec, stacked }: { spec: ChartSpec; stacked: boolean }) {
   const [hover, setHover] = useState<{ i: number; s: number } | null>(null);
   const h = 250;
   const n = spec.labels.length;
-  const rotate = n > 6 || spec.labels.some((l) => l.length > 12);
+  const dense = n > 12; // beaucoup de colonnes (ex. 30 jours) : on allège les étiquettes
+  const rotate = !dense && (n > 6 || spec.labels.some((l) => l.length > 12));
   const pad = { l: 46, r: 10, t: 22, b: rotate ? 64 : 30 };
   const single = spec.series.length === 1;
   const totals = spec.labels.map((_, i) => spec.series.reduce((a, s) => a + Math.max(0, s.data[i] ?? 0), 0));
@@ -320,7 +321,10 @@ function Columns({ spec, stacked }: { spec: ChartSpec; stacked: boolean }) {
   const barW = stacked || single ? groupW : groupW / spec.series.length;
   const y = (v: number) => pad.t + (1 - v / top) * (h - pad.t - pad.b);
   // Une seule série : chaque colonne a sa couleur (« varier les couleurs par point », comme Excel).
-  const color = (i: number, s: number) => (single ? SERIES[i % SERIES.length] : SERIES[s]);
+  const color = (i: number, s: number) => (single && !dense ? SERIES[i % SERIES.length] : SERIES[s]);
+  const every = dense ? Math.ceil(n / Math.max(2, Math.floor(plotW / 48))) : 1;
+  const peak = totals.indexOf(Math.max(...totals));
+  const showValue = (i: number) => (single || stacked) && (!dense || i === peak);
 
   return (
     <div ref={ref} className="relative">
@@ -362,12 +366,12 @@ function Columns({ spec, stacked }: { spec: ChartSpec; stacked: boolean }) {
                 );
               })}
               {/* Valeur au-dessus de la colonne (total si empilé) */}
-              {(single || stacked) && (
+              {showValue(i) && (
                 <text x={x0 + groupW / 2} y={y(stacked ? totals[i] : Math.max(0, spec.series[0].data[i] ?? 0)) - 6} textAnchor="middle" fontSize={11} fontWeight={600} fill={INK} className="fade-in tabular-nums" style={{ ["--d" as string]: "0.9s" }}>
                   {fmt(stacked ? totals[i] : spec.series[0].data[i], spec.unit)}
                 </text>
               )}
-              <text
+              {(i % every === 0 || i === n - 1) && <text
                 x={x0 + groupW / 2}
                 y={h - pad.b + 16}
                 textAnchor={rotate ? "end" : "middle"}
@@ -376,7 +380,7 @@ function Columns({ spec, stacked }: { spec: ChartSpec; stacked: boolean }) {
                 transform={rotate ? `rotate(-35 ${x0 + groupW / 2} ${h - pad.b + 16})` : undefined}
               >
                 {label.length > 22 ? `${label.slice(0, 21)}…` : label}
-              </text>
+              </text>}
             </g>
           );
         })}

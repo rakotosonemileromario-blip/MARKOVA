@@ -1,8 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getGoogleSessions, taskDeadlines, todayIn } from "./google";
-import { campaignMetrics, getMetaSession, type CampaignMetrics } from "./meta";
+import { campaignMetrics, getMetaSession, organicPosts, type CampaignMetrics, type MetaSession, type OrganicPost } from "./meta";
 import { notify, type NewNotification } from "./notify";
-import { describeRule, METRICS, PERIODS, type WatchRule } from "./watch-rules";
+import { describeRule, METRICS, PERIOD_DAYS, PERIODS, scopeList, type WatchRule } from "./watch-rules";
 
 export { describeRule, METRICS, PERIODS, type WatchRule };
 
@@ -14,7 +14,8 @@ const fmt = (v: number, d = 2) => v.toLocaleString("fr-FR", { minimumFractionDig
 /** Une campagne enfreint-elle la règle ? Renvoie la phrase d'alerte, ou null. */
 function check(rule: WatchRule, c: CampaignMetrics): string | null {
   if (c.depenses <= 0) return null; // aucune diffusion : rien à juger
-  const value = c[rule.metric as keyof CampaignMetrics] as number | null;
+  const raw = c[rule.metric as keyof CampaignMetrics] as number | null;
+  const value = rule.metric === "leads" ? (raw ?? 0) : raw; // aucune conversion = 0 lead
   const m = METRICS[rule.metric];
   const unit = m.unit === "devise" ? ` ${c.currency}` : m.unit === "%" ? " %" : m.unit === "x" ? "x" : "";
   if (value == null) {
@@ -29,6 +30,79 @@ function check(rule: WatchRule, c: CampaignMetrics): string | null {
 }
 
 export type SurveillanceResult = { nouvelles: number; verifications: string[]; erreurs: string[] };
+
+type OrganicMetric = "likes" | "commentaires" | "partages" | "vues";
+const breached = (rule: WatchRule, v: number) => (rule.operator === ">" ? v > rule.threshold : v < rule.threshold);
+
+/** Règles sur les réseaux sociaux : par publication, total sur la période, ou nombre de publications. */
+async function checkOrganic(
+  rule: WatchRule,
+  meta: MetaSession,
+  cache: Map<string, OrganicPost[]>,
+  res: SurveillanceResult,
+  push: (n: NewNotification) => Promise<void>,
+  today: string,
+) {
+  const source = rule.source === "instagram" ? "instagram" : "facebook";
+  const key = `${source}:${rule.period}`;
+  if (!cache.has(key)) cache.set(key, await organicPosts(meta, source, PERIOD_DAYS[rule.period] ?? 7));
+  const targets = scopeList(rule.scope).map((x) => x.normalize("NFKC").toLowerCase().replace(/^@/, ""));
+  const posts = cache.get(key)!.filter((p) => !targets.length || targets.some((t) => p.account.normalize("NFKC").toLowerCase().replace(/^@/, "").includes(t)));
+  const m = METRICS[rule.metric];
+  const period = PERIODS[rule.period] ?? rule.period;
+  const byAccount = new Map<string, OrganicPost[]>();
+  for (const p of posts) byAccount.set(p.account, [...(byAccount.get(p.account) ?? []), p]);
+  res.verifications.push(`${describeRule(rule)} : ${posts.length} publication(s) sur ${byAccount.size} compte(s)`);
+
+  if (rule.metric === "publications") {
+    const accounts = targets.length ? [...byAccount.keys()] : [...new Set(posts.map((p) => p.account))];
+    for (const account of accounts) {
+      const count = byAccount.get(account)?.length ?? 0;
+      if (!breached(rule, count)) continue;
+      await push({
+        kind: "alerte",
+        title: `${m.emoji} ${count} publication(s) : ${account}`,
+        body: `${count} publication(s) ${period} (seuil ${rule.operator} ${rule.threshold}).`,
+        link: `/chat?q=${encodeURIComponent(`Analyse la régularité de publication de ${account} (${count} publications ${period}). Que recommandes-tu ?`)}&send=1`,
+        dedupeKey: `regle:${rule.id}:${account}:${today}`,
+      });
+    }
+    return;
+  }
+
+  const metric = rule.metric as OrganicMetric;
+  if (posts.length && posts.every((p) => p[metric] == null)) {
+    res.erreurs.push(`${m.label} indisponible pour ${source === "facebook" ? "Facebook" : "Instagram"} avec les autorisations actuelles (${metric === "vues" ? "read_insights" : "pages_read_user_content"}) : reconnecte Meta « avec les statistiques ».`);
+    return;
+  }
+
+  if (rule.aggregation === "publication") {
+    for (const p of posts) {
+      const v = p[metric];
+      if (v == null || !breached(rule, v)) continue;
+      await push({
+        kind: "alerte",
+        title: `${m.emoji} ${v} ${m.label.toLowerCase()} : ${p.account}`,
+        body: `Publication du ${p.date.slice(0, 10)} « ${p.text || "sans texte"} » : ${v} ${m.label.toLowerCase()} (seuil ${rule.operator} ${rule.threshold}). ${p.link}`,
+        link: `/chat?q=${encodeURIComponent(`Analyse cette publication de ${p.account} (${p.link}) : ${v} ${m.label.toLowerCase()}. Pourquoi, et que faire ?`)}&send=1`,
+        dedupeKey: `regle:${rule.id}:${p.id}`,
+      });
+    }
+    return;
+  }
+
+  for (const [account, list] of byAccount) {
+    const total = list.reduce((a, p) => a + (p[metric] ?? 0), 0);
+    if (!breached(rule, total)) continue;
+    await push({
+      kind: "alerte",
+      title: `${m.emoji} ${m.label} : ${account}`,
+      body: `${total} ${m.label.toLowerCase()} ${period} sur ${list.length} publication(s) (seuil ${rule.operator} ${rule.threshold}).`,
+      link: `/chat?q=${encodeURIComponent(`Analyse les ${m.label.toLowerCase()} de ${account} : ${total} ${period}. Que recommandes-tu ?`)}&send=1`,
+      dedupeKey: `regle:${rule.id}:${account}:${today}`,
+    });
+  }
+}
 
 /**
  * Lance toutes les vérifications pour un utilisateur.
@@ -60,11 +134,21 @@ export async function runSurveillance(supabase: SupabaseClient, userId: string, 
     }
     if (rules?.length) {
       const cache = new Map<string, CampaignMetrics[]>();
+      const organicCache = new Map<string, OrganicPost[]>();
       for (const rule of rules as WatchRule[]) {
+        if ((rule.source ?? "ads") !== "ads") {
+          try {
+            await checkOrganic(rule, meta, organicCache, res, push, today);
+          } catch (err) {
+            res.erreurs.push(`${rule.source === "instagram" ? "Instagram" : "Facebook"} : ${err instanceof Error ? err.message : err}`);
+          }
+          continue;
+        }
         try {
           if (!cache.has(rule.period)) cache.set(rule.period, await campaignMetrics(meta, rule.period));
+          const targets = scopeList(rule.scope).map((x) => x.toLowerCase());
           const campaigns = cache.get(rule.period)!.filter(
-            (c) => c.status === "ACTIVE" && (!rule.scope || c.name.toLowerCase().includes(rule.scope.toLowerCase())),
+            (c) => c.status === "ACTIVE" && (!targets.length || targets.some((t) => c.name.toLowerCase().includes(t))),
           );
           res.verifications.push(`${describeRule(rule)} : ${campaigns.length} campagne(s) vérifiée(s)`);
           for (const c of campaigns) {

@@ -275,7 +275,7 @@ export type CampaignMetrics = {
   account: string; currency: string; id: string; name: string; status: string;
   depenses: number; impressions: number; frequence: number | null;
   cpm: number | null; ctr: number | null; cpc: number | null; cpl: number | null; cpa: number | null; roas: number | null;
-  leads: number | null; achats: number | null;
+  leads: number | null; achats: number | null; clics: number;
 };
 
 export async function campaignMetrics(s: MetaSession, periode: string): Promise<CampaignMetrics[]> {
@@ -304,7 +304,7 @@ export async function campaignMetrics(s: MetaSession, periode: string): Promise<
         depenses: spend, impressions: impr, frequence: n(r.frequency),
         cpm: div(spend, impr, 1000), ctr: div(link, impr, 100), cpc: div(spend, link),
         cpl: div(spend, leads), cpa: div(spend, purch), roas: purch != null ? div(rev, spend) : null,
-        leads, achats: purch,
+        leads, achats: purch, clics: link,
       });
     }
   }
@@ -428,6 +428,88 @@ async function facebookPosts(s: MetaSession, args: Record<string, unknown>) {
       .join("\n") +
     (lacking ? `\n\n_Non disponible avec les autorisations actuelles : ${lacking}. ${META_PERMISSION_FIX}_` : "")
   );
+}
+
+/** Chiffres d'une publication organique (null = non disponible avec les autorisations actuelles). */
+export type OrganicPost = {
+  source: "facebook" | "instagram"; account: string; id: string; date: string; text: string; link: string;
+  likes: number | null; commentaires: number | null; partages: number | null; vues: number | null;
+};
+
+/**
+ * Publications des N derniers jours, en chiffres, pour toutes les pages (ou comptes Instagram) choisis :
+ * utilisées par la surveillance automatique. `accounts` : noms visés (vide = tous).
+ */
+export async function organicPosts(s: MetaSession, source: "facebook" | "instagram", days: number, accounts: string[] = []) {
+  const wanted = accounts.map(plainName);
+  const match = (name: string) => !wanted.length || wanted.some((w) => plainName(name).includes(w));
+  const since = Math.floor(Date.now() / 1000) - days * 86_400;
+  const canInsights = (await grantedPermissions(s)).has("read_insights");
+  const out: OrganicPost[] = [];
+
+  for (const page of await pages(s)) {
+    if (source === "facebook") {
+      if (!match(page.name)) continue;
+      let posts: FbPost[] = [];
+      for (const fields of [
+        "message,created_time,permalink_url,shares,reactions.summary(true).limit(0),comments.summary(true).limit(0)",
+        "message,created_time,permalink_url,shares,reactions.summary(true).limit(0)",
+        "message,created_time,permalink_url,shares",
+      ]) {
+        try {
+          posts = (await graph<{ data: FbPost[] }>(`${page.id}/published_posts`, page.access_token, { fields, since: String(since), limit: "100" })).data ?? [];
+          break;
+        } catch (err) {
+          if (!isPermissionError(err)) throw err;
+        }
+      }
+      const views = new Map<string, number>();
+      if (canInsights) {
+        await Promise.all(
+          posts.map(async (p) => {
+            const r = await graph<{ data: { values: { value: number }[] }[] }>(`${p.id}/insights`, page.access_token, { metric: "post_media_view" }).catch(() => null);
+            const v = r?.data?.[0]?.values?.[0]?.value;
+            if (typeof v === "number") views.set(p.id, v);
+          }),
+        );
+      }
+      for (const p of posts) {
+        out.push({
+          source, account: page.name, id: p.id, date: p.created_time, text: (p.message ?? "").slice(0, 120), link: p.permalink_url ?? "",
+          likes: p.reactions ? p.reactions.summary.total_count : null,
+          commentaires: p.comments ? p.comments.summary.total_count : null,
+          partages: p.shares?.count ?? 0,
+          vues: views.get(p.id) ?? null,
+        });
+      }
+    } else {
+      const ig = page.instagram_business_account;
+      if (!ig || !(match(page.name) || match(ig.username ?? ""))) continue;
+      const media = await graph<{ data: { id: string; caption?: string; timestamp: string; permalink: string; like_count?: number; comments_count?: number }[] }>(
+        `${ig.id}/media`,
+        page.access_token,
+        { fields: "id,caption,timestamp,permalink,like_count,comments_count", since: String(since), limit: "100" },
+      );
+      for (const m of (media.data ?? []).filter((x) => new Date(x.timestamp).getTime() / 1000 >= since)) {
+        const r = await graph<{ data: { values: { value: number }[] }[] }>(`${m.id}/insights`, page.access_token, { metric: "views" }).catch(() => null);
+        const v = r?.data?.[0]?.values?.[0]?.value;
+        out.push({
+          source, account: `@${ig.username ?? page.name}`, id: m.id, date: m.timestamp, text: (m.caption ?? "").slice(0, 120), link: m.permalink,
+          likes: m.like_count ?? null, commentaires: m.comments_count ?? null, partages: null, vues: typeof v === "number" ? v : null,
+        });
+      }
+    }
+  }
+  return out;
+}
+
+/** Noms des pages et comptes Instagram connectés (pour les choix de l'interface). */
+export async function connectedAccounts(s: MetaSession) {
+  const all = await pages(s).catch(() => [] as Page[]);
+  return {
+    facebook: all.map((p) => p.name),
+    instagram: all.flatMap((p) => (p.instagram_business_account ? [`@${p.instagram_business_account.username ?? p.name}`] : [])),
+  };
 }
 
 /** Pages Facebook et comptes Instagram connectés (ceux choisis dans Connexions). */

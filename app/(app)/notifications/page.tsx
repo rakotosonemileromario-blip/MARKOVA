@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
-import { adminConfigured } from "@/lib/supabase/admin";
+import { adminConfigured, secretEnv } from "@/lib/supabase/admin";
 import { pushConfigured } from "@/lib/notify";
 import { describeRule, type WatchRule } from "@/lib/monitor";
 import { resolveTimezone, TZ_COOKIE } from "@/lib/timezone";
@@ -33,7 +33,7 @@ export default async function NotificationsPage() {
       weeklyReport={settings.data?.weekly_report ?? true}
       timezone={timezone}
       pushReady={pushConfigured()}
-      cronReady={adminConfigured() && Boolean(process.env.CRON_SECRET)}
+      cronReady={adminConfigured() && Boolean(secretEnv("CRON_SECRET"))}
     />
   );
 }

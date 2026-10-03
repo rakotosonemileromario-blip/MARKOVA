@@ -1,12 +1,13 @@
 import { timingSafeEqual } from "crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isValidTimezone, DEFAULT_TZ } from "./timezone";
+import { secretEnv } from "./supabase/admin";
 
 // Tâches planifiées (vercel.json → crons) : Vercel appelle la route avec
 // « Authorization: Bearer <CRON_SECRET> ». Aucun utilisateur connecté.
 
 export function cronAuthorized(req: Request) {
-  const secret = process.env.CRON_SECRET;
+  const secret = secretEnv("CRON_SECRET");
   const got = req.headers.get("authorization") ?? "";
   const want = `Bearer ${secret}`;
   return Boolean(secret) && got.length === want.length && timingSafeEqual(Buffer.from(got), Buffer.from(want));

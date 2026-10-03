@@ -11,7 +11,8 @@ async function isOwner(email: string | undefined) {
   const owners = (process.env.OWNER_EMAILS ?? "").split(",").map((x) => x.trim().toLowerCase()).filter(Boolean);
   if (owners.length) return owners.includes(email.toLowerCase());
   const { data, error } = await createAdminClient().auth.admin.listUsers({ perPage: 1000 });
-  if (error) throw new Error(`clé de service Supabase refusée (${error.message}) : vérifie SUPABASE_SERVICE_ROLE_KEY sur Vercel`);
+  // Jamais le message brut : il peut contenir la clé elle-même.
+  if (error) throw new Error("clé de service Supabase refusée : vérifie SUPABASE_SERVICE_ROLE_KEY sur Vercel (une seule fois, sur une seule ligne)");
   const first = [...(data?.users ?? [])].sort((a, b) => a.created_at.localeCompare(b.created_at))[0];
   return first?.email?.toLowerCase() === email.toLowerCase();
 }

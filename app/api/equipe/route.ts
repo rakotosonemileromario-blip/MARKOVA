@@ -10,7 +10,8 @@ async function isOwner(email: string | undefined) {
   if (!email) return false;
   const owners = (process.env.OWNER_EMAILS ?? "").split(",").map((x) => x.trim().toLowerCase()).filter(Boolean);
   if (owners.length) return owners.includes(email.toLowerCase());
-  const { data } = await createAdminClient().auth.admin.listUsers({ perPage: 1000 });
+  const { data, error } = await createAdminClient().auth.admin.listUsers({ perPage: 1000 });
+  if (error) throw new Error(`clé de service Supabase refusée (${error.message}) : vérifie SUPABASE_SERVICE_ROLE_KEY sur Vercel`);
   const first = [...(data?.users ?? [])].sort((a, b) => a.created_at.localeCompare(b.created_at))[0];
   return first?.email?.toLowerCase() === email.toLowerCase();
 }
@@ -19,7 +20,21 @@ async function guard() {
   const auth = await requireUser();
   if (!auth) return { error: Response.json({ error: "Non authentifié" }, { status: 401 }) };
   if (!adminConfigured()) return { error: Response.json({ error: "SUPABASE_SERVICE_ROLE_KEY manquant sur le serveur" }, { status: 500 }) };
-  if (!(await isOwner(auth.user.email))) return { error: Response.json({ error: "Seul le propriétaire peut gérer l'équipe", owner: false }, { status: 403 }) };
+  let owner: boolean;
+  try {
+    owner = await isOwner(auth.user.email);
+  } catch (err) {
+    return { error: Response.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 }) };
+  }
+  if (!owner) {
+    const configured = Boolean((process.env.OWNER_EMAILS ?? "").trim());
+    return {
+      error: Response.json(
+        { error: configured ? "Seul le propriétaire (OWNER_EMAILS) peut gérer l'équipe" : "Seul le propriétaire (premier compte créé) peut gérer l'équipe", owner: false },
+        { status: 403 },
+      ),
+    };
+  }
   return { auth };
 }
 

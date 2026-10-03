@@ -46,20 +46,42 @@ export async function latestStudies(supabase: SupabaseClient, projectId: string 
   if (!projectId) return [];
   const { data, error } = await supabase
     .from("market_studies")
-    .select("id, market, country, region, language, sections, status, created_at")
+    .select("id, market, country, region, language, sections, status, created_at, validated_at")
     .eq("project_id", projectId)
     .order("created_at", { ascending: false })
     .limit(30);
   if (error) return [];
-  const out: { market: string; country: string; region: string | null; language: string; status: string; synthese: string | null; date: string }[] = [];
-  for (const s of data ?? []) {
+  type Row = { id: string; market: string; country: string; region: string | null; language: string; sections: Study["sections"]; status: string; created_at: string; validated_at: string | null };
+  const out: {
+    id: string; market: string; country: string; region: string | null; language: string; status: string; date: string;
+    /** Étude validée par l'utilisateur (la seule utilisée dans les discussions), éventuellement plus ancienne que la dernière. */
+    validated: { id: string; date: string; synthese: string | null } | null;
+  }[] = [];
+  for (const s of (data ?? []) as Row[]) {
     if (out.some((o) => sameMarket(o, s))) continue;
+    const v = ((data ?? []) as Row[]).find((x) => sameMarket(x, s) && x.validated_at && x.status === "terminee");
     out.push({
-      market: s.market, country: s.country, region: s.region, language: s.language, status: s.status,
-      synthese: (s.sections as Study["sections"])?.synthese ?? null, date: String(s.created_at).slice(0, 10),
+      id: s.id, market: s.market, country: s.country, region: s.region, language: s.language, status: s.status, date: String(s.created_at).slice(0, 10),
+      validated: v ? { id: v.id, date: String(v.created_at).slice(0, 10), synthese: v.sections?.synthese ?? null } : null,
     });
   }
   return out;
+}
+
+/** Étude validée d'un projet pour un marché (le seul marché validé si `country` est vide). */
+async function validatedStudy(supabase: SupabaseClient, projectId: string, country?: string, region?: string | null) {
+  const { data } = await supabase
+    .from("market_studies")
+    .select("id, market, country, region, language, sections, created_at, validated_at")
+    .eq("project_id", projectId)
+    .eq("status", "terminee")
+    .not("validated_at", "is", null)
+    .order("created_at", { ascending: false });
+  const all = (data ?? []) as (Pick<Study, "id" | "market" | "country" | "region" | "language" | "sections" | "created_at"> & { validated_at: string })[];
+  const byMarket = all.filter((s, i) => all.findIndex((x) => sameMarket(x, s)) === i);
+  if (!country) return byMarket.length === 1 ? byMarket[0] : byMarket.length ? byMarket : null;
+  const c = country.toUpperCase();
+  return byMarket.find((s) => s.country === c && (!region || (s.region ?? "").toLowerCase() === region.toLowerCase())) ?? byMarket.find((s) => s.country === c) ?? null;
 }
 
 // ─── Moteur ──────────────────────────────────────────────────────
@@ -419,7 +441,146 @@ export const MARKET_TOOLS: ToolSet["defs"] = [
       properties: { projet: { type: "string" }, pays: { type: "string" }, region: { type: "string" }, section: { type: "string", enum: [...STEPS.filter((x) => x !== "plan"), "tout"] } },
     },
   },
+  {
+    name: "etude_marche_valider",
+    label: "✅ Validation de l'étude",
+    description:
+      "Valide (ou retire la validation de) l'étude de marché d'un projet pour un marché. UNIQUEMENT quand l'utilisateur le dit explicitement (« je valide l'étude », « elle est bonne, utilise-la »). " +
+      "Une étude validée est utilisée dans toutes les discussions du projet (contenus, pubs, notes de contenu).",
+    parameters: {
+      type: "object",
+      properties: { projet: { type: "string" }, pays: { type: "string", description: "Vide = le seul marché étudié" }, region: { type: "string" }, valider: { type: "boolean", description: "false = retirer la validation. Défaut : true" } },
+    },
+  },
+  {
+    name: "contenu_evaluer",
+    label: "📊 Note du contenu",
+    description:
+      "Note un contenu (post, pub, accroche, script vidéo, email, page) sur 100 par rapport à l'étude de marché VALIDÉE du projet : cible, besoin, accroche, valeur, preuves, CTA, adaptation au marché, mots-clés, voix de marque, format. " +
+      "Les calculs sont faits par MARKOVA (exacts) ; renvoie aussi les corrections et une version améliorée. À utiliser dès que l'utilisateur demande « mon contenu est à combien », « est-ce que ça va marcher », « note ce post ».",
+    parameters: {
+      type: "object",
+      properties: {
+        contenu: { type: "string", description: "Le texte complet du contenu (et la description du visuel s'il y en a un)" },
+        format: { type: "string", description: "post, reel, story, pub, carrousel, email, page…" },
+        canal: { type: "string", description: "Facebook, Instagram, LinkedIn, TikTok, site…" },
+        objectif: { type: "string", description: "notoriété, engagement, leads, ventes…" },
+        projet: { type: "string" },
+        pays: { type: "string", description: "Marché visé (vide = le seul marché validé)" },
+        region: { type: "string" },
+      },
+      required: ["contenu"],
+    },
+  },
 ];
+
+// ─── Note d'un contenu ───────────────────────────────────────────
+// L'IA note chaque critère de 0 à 10 en s'appuyant sur l'étude ; le total pondéré est calculé ici (exact),
+// la présence des mots-clés de l'étude est vérifiée par le code.
+
+const CRITERIA = [
+  { id: "cible", label: "🎯 Parle à une cible prioritaire", weight: 15 },
+  { id: "besoin", label: "🧭 Répond à un besoin ou un irritant", weight: 15 },
+  { id: "accroche", label: "🪝 Accroche", weight: 15 },
+  { id: "valeur", label: "💎 Offre et bénéfice clairs", weight: 10 },
+  { id: "preuve", label: "🛡️ Objections levées / preuves", weight: 10 },
+  { id: "cta", label: "👉 Appel à l'action", weight: 10 },
+  { id: "marche", label: "🌍 Adapté au marché (langue, culture, devise)", weight: 10 },
+  { id: "mots_cles", label: "🔎 Mots-clés de l'étude", weight: 5 },
+  { id: "voix", label: "🎙️ Voix de marque", weight: 5 },
+  { id: "format", label: "📐 Format et canal", weight: 5 },
+] as const;
+
+const SCORE_SYSTEM = `Tu es l'évaluateur de contenus de MARKOVA. Tu notes un contenu marketing UNIQUEMENT par rapport à l'étude de marché fournie (cibles, besoins, objections, mots-clés, marché) et à la voix de marque.
+Réponds UNIQUEMENT par un JSON :
+{"cible_visee": "nom de la cible de l'étude que ce contenu touche le mieux", "notes": {"cible": {"note": 0-10, "pourquoi": "…"}, "besoin": {…}, "accroche": {…}, "valeur": {…}, "preuve": {…}, "cta": {…}, "marche": {…}, "mots_cles": {…}, "voix": {…}, "format": {…}}, "ameliorations": ["… 3 à 5 corrections concrètes, par ordre d'impact"], "version_amelioree": "le contenu réécrit, dans la langue du marché"}
+- Sois exigeant et juste : 5 = moyen, 8 = très bon, 10 = exceptionnel. Une note sans justification précise tirée de l'étude ne vaut rien.
+- "pourquoi" : une phrase courte, qui cite l'élément de l'étude concerné (cible, besoin, objection, mot-clé).
+- La version améliorée garde l'intention et l'offre de l'utilisateur ; n'invente ni prix, ni chiffre, ni témoignage.`;
+
+const potential = (score: number) =>
+  score >= 80 ? "🟢 Excellent" : score >= 65 ? "🟢 Bon" : score >= 50 ? "🟡 Moyen" : "🔴 Faible";
+
+/** Mots-clés de l'étude : première colonne des tableaux de la section mots-clés. */
+function studyKeywords(section: string | undefined) {
+  if (!section) return [];
+  return [
+    ...new Set(
+      section
+        .split("\n")
+        .map((l) => l.match(/^\|\s*([^|]+?)\s*\|/)?.[1] ?? "")
+        .map((k) => plainKw(k.replace(/⚠️.*$/, "")))
+        .filter((k) => k && !/^[-:\s]+$/.test(k) && !/mot.?cl/i.test(k) && k.length < 60),
+    ),
+  ];
+}
+
+export async function scoreContent(
+  study: Pick<Study, "market" | "country" | "region" | "language" | "sections">,
+  content: string,
+  opts: { format?: string; canal?: string; objectif?: string; brandVoice?: string | null },
+) {
+  const clip = (k: Step, n: number) => (study.sections[k] ? `## ${STEP_LABELS[k]}\n${study.sections[k]!.slice(0, n)}` : "");
+  const raw = await ask(
+    SCORE_SYSTEM,
+    [
+      `MARCHÉ : ${study.market} (pays ${study.country}${study.region ? `, ${study.region}` : ""}, langue ${study.language})`,
+      clip("synthese", 2500),
+      clip("offres", 2500),
+      clip("cibles", 5000),
+      clip("besoins", 4000),
+      clip("mots_cles", 2500),
+      opts.brandVoice ? `## 🎙️ Voix de marque\n${opts.brandVoice.slice(0, 2500)}` : "## 🎙️ Voix de marque\n(aucune fiche : note « voix » sur la cohérence générale du ton)",
+      `## CONTENU À NOTER${opts.format ? ` · format ${opts.format}` : ""}${opts.canal ? ` · canal ${opts.canal}` : ""}${opts.objectif ? ` · objectif ${opts.objectif}` : ""}\n${content.slice(0, 6000)}`,
+    ]
+      .filter(Boolean)
+      .join("\n\n"),
+  );
+  const json = parseJson(raw) as {
+    cible_visee?: string;
+    notes?: Record<string, { note?: number; pourquoi?: string }>;
+    ameliorations?: string[];
+    version_amelioree?: string;
+  };
+
+  // Mots-clés : vérification exacte dans le texte (l'avis de l'IA ne compte que s'il n'y a pas de liste).
+  const keywords = studyKeywords(study.sections.mots_cles);
+  const text = plainKw(content);
+  const found = keywords.filter((k) => text.includes(k));
+  const rows = CRITERIA.map((c) => {
+    const ai = json.notes?.[c.id];
+    let note = Math.min(10, Math.max(0, Math.round(Number(ai?.note ?? 0) * 10) / 10));
+    let why = String(ai?.pourquoi ?? "").trim();
+    if (c.id === "mots_cles" && keywords.length) {
+      note = Math.min(10, found.length * 4);
+      why = found.length ? `Présents : ${found.slice(0, 5).map((k) => `« ${k} »`).join(", ")}` : "Aucun mot-clé de l'étude dans le texte";
+    }
+    return { ...c, note, why, points: (note / 10) * c.weight };
+  });
+  const score = Math.round(rows.reduce((a, r) => a + r.points, 0));
+  return { score, potential: potential(score), rows, target: json.cible_visee ?? "", improvements: json.ameliorations ?? [], rewrite: json.version_amelioree ?? "" };
+}
+
+function formatScore(r: Awaited<ReturnType<typeof scoreContent>>, market: string) {
+  const weakest = [...r.rows].sort((a, b) => a.points / a.weight - b.points / b.weight).slice(0, 3);
+  return [
+    `#### Note calculée par MARKOVA — marché ${market}`,
+    `Score : **${r.score}/100** · potentiel ${r.potential}${r.target ? ` · cible la mieux touchée : ${r.target}` : ""}`,
+    "",
+    "| Critère | Note /10 | Points | Pourquoi |",
+    "| --- | --- | --- | --- |",
+    ...r.rows.map((x) => `| ${x.label} | ${x.note} | ${Math.round(x.points * 10) / 10} / ${x.weight} | ${x.why.replace(/\|/g, "/")} |`),
+    "",
+    `Points les plus faibles : ${weakest.map((w) => w.label).join(", ")}.`,
+    r.improvements.length ? `\nCorrections (par ordre d'impact) :\n${r.improvements.map((x, i) => `${i + 1}. ${x}`).join("\n")}` : "",
+    r.rewrite ? `\nVersion améliorée :\n${r.rewrite}` : "",
+    "",
+    "_Consignes de présentation : affiche le score et le potentiel dans un bloc kpi (valeurs exactes ci-dessus), le détail en tableau, un graphique « bar » des notes par critère, puis les corrections et la version améliorée. " +
+      "Précise que c'est une note d'adéquation à l'étude de marché validée, pas une garantie de résultat : seuls les chiffres réels après publication le confirment._",
+  ]
+    .filter((l) => l !== null)
+    .join("\n");
+}
 
 const norm = (s: string) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
 
@@ -430,7 +591,7 @@ export async function runMarketTool(
   args: Record<string, unknown>,
   ctx: { userId: string; current: Project | null; all: Project[]; start: (studyId: string) => void },
 ): Promise<string | null> {
-  if (!["marches_lister", "marches_definir", "etude_marche_lancer", "etude_marche_lire"].includes(name)) return null;
+  if (!["marches_lister", "marches_definir", "etude_marche_lancer", "etude_marche_lire", "etude_marche_valider", "contenu_evaluer"].includes(name)) return null;
   const wanted = norm(String(args.projet ?? ""));
   const project = wanted
     ? (ctx.all.find((p) => norm(p.name) === wanted) ?? ctx.all.find((p) => norm(p.name).includes(wanted) || wanted.includes(norm(p.name))))
@@ -465,6 +626,49 @@ export async function runMarketTool(
     const { error } = await supabase.from("projects").update({ markets, updated_at: new Date().toISOString() }).eq("id", project.id);
     if (error) return /markets/.test(error.message) ? setupError : `Erreur : ${error.message}`;
     return `Marchés de « ${project.name} » enregistrés :\n${markets.map((m) => `- ${m.label} (${m.country}, ${m.language})${m.pages?.length ? ` · ${m.pages.join(", ")}` : ""}`).join("\n") || "(aucun)"}`;
+  }
+
+  if (name === "etude_marche_valider") {
+    const { data, error } = await supabase
+      .from("market_studies")
+      .select("id, market, country, region, status, created_at, validated_at")
+      .eq("project_id", project.id)
+      .order("created_at", { ascending: false });
+    if (error) return setupError;
+    const c = String(args.pays ?? "").trim().toUpperCase();
+    const r = norm(String(args.region ?? ""));
+    const latestPerMarket = (data ?? []).filter((s, i, all) => all.findIndex((x) => sameMarket(x, s)) === i);
+    const candidates = latestPerMarket.filter((s) => (!c || s.country === c) && (!r || norm(s.region ?? "") === r));
+    if (!candidates.length) return `Aucune étude pour « ${project.name} »${c ? ` sur ${countryName(c)}` : ""}.`;
+    if (candidates.length > 1) return `Plusieurs marchés étudiés : ${candidates.map((s) => `${s.market} (pays ${s.country})`).join(", ")}. Précise « pays » (et « region »).`;
+    const st = candidates[0];
+    if (st.status !== "terminee") return `L'étude ${st.market} n'est pas terminée (${st.status}) : elle ne peut pas encore être validée.`;
+    const valider = args.valider !== false;
+    await supabase.from("market_studies").update({ validated_at: valider ? new Date().toISOString() : null }).eq("id", st.id);
+    return valider
+      ? `Étude « ${project.name} » · ${st.market} validée : elle est maintenant utilisée dans toutes les discussions du projet (contenus, pubs, notes de contenu avec contenu_evaluer).`
+      : `Validation retirée : l'étude « ${project.name} » · ${st.market} n'est plus utilisée dans les discussions.`;
+  }
+
+  if (name === "contenu_evaluer") {
+    const content = String(args.contenu ?? "").trim();
+    if (content.length < 10) return "Contenu manquant : demande le texte complet à noter.";
+    const found = await validatedStudy(supabase, project.id, String(args.pays ?? "").trim() || undefined, String(args.region ?? "").trim() || null);
+    if (!found) {
+      const studies = await latestStudies(supabase, project.id);
+      return studies.length
+        ? `Aucune étude VALIDÉE pour « ${project.name} »${args.pays ? ` sur ce marché` : ""}. Études existantes : ${studies.map((s) => `${s.market} (${s.status})`).join(", ")}. L'utilisateur doit d'abord la valider (page « Marché » ou en le disant).`
+        : `Aucune étude de marché pour « ${project.name} » : propose de la lancer (etude_marche_lancer) puis de la valider ; la note se calcule par rapport à elle.`;
+    }
+    if (Array.isArray(found)) return `Plusieurs marchés validés : ${found.map((s) => `${s.market} (pays ${s.country})`).join(", ")}. Demande pour quel marché (ou quelle page) est ce contenu, puis passe « pays ».`;
+    const { data: pv } = await supabase.from("projects").select("brand_voice").eq("id", project.id).maybeSingle();
+    const r = await scoreContent(found, content, {
+      format: args.format ? String(args.format) : undefined,
+      canal: args.canal ? String(args.canal) : undefined,
+      objectif: args.objectif ? String(args.objectif) : undefined,
+      brandVoice: (pv?.brand_voice as string | null) ?? null,
+    });
+    return formatScore(r, found.market);
   }
 
   const market = cleanMarket(args);

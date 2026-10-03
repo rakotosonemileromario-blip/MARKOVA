@@ -12,7 +12,7 @@ type Project = { id: string; name: string };
 type Study = {
   id: string; project_id: string; market: string; country: string; region: string | null; language: string;
   sections: Partial<Record<Step, string>>; sources: { title: string; url: string }[];
-  status: "en_attente" | "en_cours" | "terminee" | "erreur"; error: string | null; started_at: string | null; created_at: string; updated_at: string;
+  status: "en_attente" | "en_cours" | "terminee" | "erreur"; error: string | null; started_at: string | null; created_at: string; updated_at: string; validated_at: string | null;
 };
 
 const VISIBLE = STEPS.filter((s) => s !== "plan");
@@ -59,7 +59,7 @@ export default function MarketBoard() {
       supabase.from("projects").select("markets").eq("id", pid).maybeSingle(),
       supabase
         .from("market_studies")
-        .select("id, project_id, market, country, region, language, sections, sources, status, error, started_at, created_at, updated_at")
+        .select("id, project_id, market, country, region, language, sections, sources, status, error, started_at, created_at, updated_at, validated_at")
         .eq("project_id", pid)
         .order("created_at", { ascending: false }),
     ]);
@@ -199,13 +199,13 @@ export default function MarketBoard() {
           </p>
         )}
 
-        {current && <StudyView study={current} tab={tab} setTab={setTab} />}
+        {current && <StudyView study={current} tab={tab} setTab={setTab} onChange={() => load(projectId)} />}
       </div>
     </div>
   );
 }
 
-function StudyView({ study, tab, setTab }: { study: Study; tab: Step; setTab: (s: Step) => void }) {
+function StudyView({ study, tab, setTab, onChange }: { study: Study; tab: Step; setTab: (s: Step) => void; onChange: () => void }) {
   const doneCount = VISIBLE.filter((s) => study.sections[s]).length;
   const active = study.sections[tab] ? tab : (VISIBLE.find((s) => study.sections[s]) ?? tab);
   return (
@@ -215,6 +215,25 @@ function StudyView({ study, tab, setTab }: { study: Study; tab: Step; setTab: (s
         <span>pays {study.country}{study.region ? ` · ${study.region}` : ""} · langue {study.language}</span>
         <span>{day(study.created_at)}</span>
       </div>
+
+      {study.status === "terminee" && (
+        <div className={`mt-3 rounded-lg border p-3 flex flex-wrap items-center gap-2 ${study.validated_at ? "border-ok/40 bg-ok-soft" : "border-warn/40 bg-warn-soft"}`}>
+          <span className="flex-1 min-w-[200px] text-[13px]">
+            {study.validated_at
+              ? `✅ Validée le ${day(study.validated_at)} : MARKOVA l'utilise dans les discussions du projet (contenus, pubs, notes de contenu).`
+              : "⏳ Pas encore validée : relis-la, puis valide-la pour que MARKOVA l'utilise dans les discussions du projet."}
+          </span>
+          <button
+            onClick={async () => {
+              await createClient().from("market_studies").update({ validated_at: study.validated_at ? null : new Date().toISOString() }).eq("id", study.id);
+              onChange();
+            }}
+            className={`rounded-lg h-9 px-3 text-[13px] font-semibold ${study.validated_at ? "border border-line" : "bg-accent-strong text-white"}`}
+          >
+            {study.validated_at ? "Retirer la validation" : "Valider cette étude"}
+          </button>
+        </div>
+      )}
 
       {study.status !== "terminee" && (
         <div className="mt-3">

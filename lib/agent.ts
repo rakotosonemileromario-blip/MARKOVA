@@ -145,7 +145,10 @@ export function buildSystemPrompt(opts: {
   competitors?: string[];
   markets?: {
     list: { label: string; country: string; region?: string | null; language: string; pages?: string[] }[];
-    studies: { market: string; country: string; region: string | null; status: string; synthese: string | null; date: string }[];
+    studies: {
+      id: string; market: string; country: string; region: string | null; status: string; date: string;
+      validated: { id: string; date: string; synthese: string | null } | null;
+    }[];
   } | null;
 }) {
   const { allSkills, activeSkills, memories, files, webSearch, google, meta, project, watchRules, brandVoice, competitors, markets } = opts;
@@ -194,10 +197,17 @@ export function buildSystemPrompt(opts: {
               .join("\n")
           : "Aucun marché déclaré. Dès que c'est utile (contenu pour une page, pub, étude), déduis les marchés des pages (meta_pages : nom, pays ; langue des publications) ou du site, puis enregistre-les avec `marches_definir` (sans validation) ; demande seulement si c'est ambigu.") +
         `\n**Tout contenu, pub ou conseil destiné à une page s'adapte au marché de cette page** : langue, devise, références culturelles, vocabulaire local, fuseau horaire et jours fériés. Si la page ou le marché visé n'est pas clair, demande-le en une phrase.\n` +
-        `Étude de marché (cibles, besoins, PESTEL, mots-clés Google du pays, sujets) : \`etude_marche_lancer\` (une par marché, en arrière-plan, ~15 recherches Web : jamais par habitude), \`etude_marche_lire\` pour le détail, \`marches_lister\`.` +
+        `Étude de marché (cibles, besoins, PESTEL, mots-clés Google du pays, sujets) : \`etude_marche_lancer\` (une par marché, en arrière-plan, ~15 recherches Web : jamais par habitude), \`etude_marche_lire\` pour le détail, \`marches_lister\`. ` +
+        `Seule une étude **validée par l'utilisateur** sert de référence dans cette discussion ; il la valide dans la page « Marché » ou en le disant (\`etude_marche_valider\`, uniquement sur sa demande explicite).\n` +
+        `**Note de contenu** : quand l'utilisateur demande ce que vaut un contenu (« mon post est à combien », « est-ce que ça va marcher », « note cette pub »), appelle \`contenu_evaluer\` avec le texte complet et présente le résultat tel quel (score exact, potentiel, détail, corrections, version améliorée). ` +
+        `Ne donne jamais de pourcentage de réussite inventé : c'est une note d'adéquation à l'étude, que seuls les chiffres réels après publication confirment.` +
         studies
-          .filter((s) => s.synthese)
-          .map((s) => `\n\n### Synthèse de l'étude — ${s.market} (${s.date})\nAppuie-toi dessus pour tout contenu ou ciblage sur ce marché.\n${s.synthese}`)
+          .filter((s) => s.validated?.synthese)
+          .map((s) => `\n\n### ✅ Étude validée — ${s.market} (${s.validated!.date})\nRéférence pour tout contenu, ciblage ou conseil sur ce marché.\n${s.validated!.synthese}`)
+          .join("") +
+        studies
+          .filter((s) => s.status === "terminee" && (!s.validated || s.validated.id !== s.id))
+          .map((s) => `\n- Étude ${s.market} du ${s.date} terminée mais pas encore validée : ne t'en sers pas comme référence ; si c'est utile, propose à l'utilisateur de la relire et de la valider.`)
           .join("") +
         studies
           .filter((s) => s.status === "en_cours" || s.status === "en_attente")

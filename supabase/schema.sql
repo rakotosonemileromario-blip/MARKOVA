@@ -263,6 +263,8 @@ create table if not exists public.market_studies (
   updated_at   timestamptz not null default now()
 );
 create index if not exists market_studies_project on public.market_studies (user_id, project_id, created_at desc);
+-- Validation par l'utilisateur : seule une étude validée est utilisée dans les discussions du projet.
+alter table public.market_studies add column if not exists validated_at timestamptz;
 
 -- ─── RLS ────────────────────────────────────────────────────────
 alter table public.market_studies       enable row level security;

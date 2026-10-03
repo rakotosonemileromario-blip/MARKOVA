@@ -42,9 +42,13 @@ export default function MemoryProposal({ proposal }: { proposal: Proposal }) {
 
   async function save() {
     setState("saving");
-    const { error } = await createClient()
+    const supabase = createClient();
+    // Mémoire rattachée au projet de la discussion (/c/<id>), pas forcément au projet actif du menu.
+    const convId = window.location.pathname.match(/^\/c\/([0-9a-f-]{36})/)?.[1];
+    const { data: conv } = convId ? await supabase.from("conversations").select("project_id").eq("id", convId).maybeSingle() : { data: null };
+    const { error } = await supabase
       .from("memories")
-      .insert({ category: proposal.categorie, skill: proposal.competence, content: content.trim(), project_id: getCurrentProjectId() });
+      .insert({ category: proposal.categorie, skill: proposal.competence, content: content.trim(), project_id: conv ? conv.project_id : getCurrentProjectId() });
     setState(error ? "error" : "saved");
   }
 

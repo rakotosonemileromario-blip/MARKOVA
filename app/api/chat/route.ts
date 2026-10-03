@@ -3,7 +3,9 @@ import { isGlobalAnalysis, loadAllSkills, selectSkills } from "@/lib/skills";
 import { buildSystemPrompt, GLOBAL_ANALYSIS_PROMPT, VOICE_SUMMARY_PROMPT, type FileContext, type Memory } from "@/lib/agent";
 import { generate, type Attachment, type Source, type ToolSet, type Turn } from "@/lib/llm";
 import { ACTION_KINDS, describeAction, getGoogleSessions, googleToolDefs, runGoogleTool } from "@/lib/google";
-import { describeMetaAction, getMetaSession, META_ACTION_KINDS, META_TOOLS, runMetaTool } from "@/lib/meta";
+import { getMetaSession, META_ACTION_KINDS, META_TOOLS, prepareMetaAction, runMetaTool } from "@/lib/meta";
+import { BRAND_TOOLS, getBrandVoice, runBrandTool } from "@/lib/brand";
+import { runVeilleTool, VEILLE_TOOLS } from "@/lib/veille";
 import { isMetaAction, proposeActionTool } from "@/lib/actions";
 import { hasWebSearchProvider, searchWeb, webResultsToPrompt, webResultsToSources } from "@/lib/websearch";
 import { runWebTool, WEB_TOOLS } from "@/lib/webtools";
@@ -26,7 +28,7 @@ type Body = { conversationId?: string; message?: string; fileIds?: string[]; web
 export async function POST(req: Request) {
   const auth = await requireUser();
   if (!auth) return Response.json({ error: "Non authentifié" }, { status: 401 });
-  const { supabase } = auth;
+  const { supabase, user } = auth;
 
   const body = (await req.json()) as Body;
   const message = body.message?.trim();
@@ -128,10 +130,17 @@ export async function POST(req: Request) {
   const previousUser = turns.filter((t) => t.role === "user").slice(-2, -1)[0]?.text ?? "";
   const activeSkills = selectSkills(allSkills, `${message}\n${previousUser}`, message);
 
-  const [googleAccounts, meta, watchRules] = await Promise.all([
+  const [googleAccounts, meta, watchRules, brandVoice, competitors] = await Promise.all([
     getGoogleSessions(supabase, { timezone }).catch(() => []),
     getMetaSession(supabase).catch(() => null),
     listWatchRules(supabase).catch(() => []),
+    getBrandVoice(supabase, projects.current, projects.all).catch(() => null),
+    supabase
+      .from("competitors")
+      .select("name")
+      .eq("active", true)
+      .order("name")
+      .then((r) => (r.data ?? []).map((c) => String(c.name))),
   ]);
 
   // Actions proposées pendant ce tour : enregistrées « en attente », jamais exécutées ici.
@@ -147,7 +156,7 @@ export async function POST(req: Request) {
 
   async function proposeAction(args: Record<string, unknown>): Promise<string> {
     const kind = String(args.type ?? "");
-    const params = (args.params as Record<string, unknown>) ?? {};
+    let params = (args.params as Record<string, unknown>) ?? {};
     let accountLabel = "";
     let summary = "";
 
@@ -156,9 +165,9 @@ export async function POST(req: Request) {
       if (!meta) return "Meta n'est pas connecté.";
       if (!(META_ACTION_KINDS as readonly string[]).includes(kind)) return `Type d'action inconnu : ${kind}.`;
       try {
-        summary = await describeMetaAction(meta, kind, params);
+        ({ summary, params } = await prepareMetaAction(meta, kind, params));
       } catch (err) {
-        return `Action impossible : ${err instanceof Error ? err.message : err}. Vérifie l'objet_id avec meta_performances.`;
+        return `Action impossible : ${err instanceof Error ? err.message : err}. Vérifie les identifiants avec ${kind.startsWith("meta_audience_") ? "meta_audiences" : "meta_performances"}.`;
       }
       accountLabel = `Meta · ${meta.name}`;
     } else {
@@ -220,6 +229,8 @@ export async function POST(req: Request) {
       ...PROJECT_TOOLS,
       ...WATCH_TOOLS,
       ...FOLLOWUP_TOOLS,
+      ...BRAND_TOOLS,
+      ...VEILLE_TOOLS,
       ...(googleAccounts.length ? googleToolDefs(googleAccounts) : []),
       ...(meta ? META_TOOLS : []),
       ...(proposeTool ? [proposeTool] : []),
@@ -234,6 +245,10 @@ export async function POST(req: Request) {
       if (watch !== null) return watch;
       const followup = await runFollowupTool(supabase, name, args, { conversationId: conversationId!, timezone });
       if (followup !== null) return followup;
+      const brand = await runBrandTool(supabase, name, args, projects);
+      if (brand !== null) return brand;
+      const veille = await runVeilleTool(supabase, name, args, { userId: user.id, projectId: projects.current?.id ?? null, timezone });
+      if (veille !== null) return veille;
       if (name === "proposer_action") return proposeActions(args);
       if (meta) {
         const m = await runMetaTool(meta, name, args);
@@ -257,6 +272,8 @@ export async function POST(req: Request) {
     google: googleAccounts.length ? { emails: googleAccounts.map((a) => a.email) } : null,
     meta: meta ? { name: meta.name } : null,
     watchRules: watchRules.map((r) => describeRule(r)),
+    brandVoice,
+    competitors,
     project: {
       current: projects.current,
       linked: linked.map((l) => ({ name: l.project.name, description: l.project.description, relation: l.relation })),

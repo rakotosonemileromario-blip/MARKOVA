@@ -599,6 +599,151 @@ async function instagramPosts(s: MetaSession, args: Record<string, unknown>) {
   return `Instagram @${profile.username} · ${profile.followers_count ?? "?"} abonnés · ${profile.media_count ?? "?"} publications\n${lines.join("\n")}`;
 }
 
+// ─── Audiences et ciblage ────────────────────────────────────────
+const BREAKDOWNS: Record<string, { breakdowns: string; label: string }> = {
+  age_sexe: { breakdowns: "age,gender", label: "Âge et sexe" },
+  pays: { breakdowns: "country", label: "Pays" },
+  region: { breakdowns: "region", label: "Région" },
+  plateforme: { breakdowns: "publisher_platform,platform_position", label: "Plateforme et placement" },
+};
+const GENDER: Record<string, string> = { male: "hommes", female: "femmes", unknown: "inconnu" };
+
+/** Qui voit, clique et convertit : statistiques des pubs ventilées par âge / sexe, pays, région ou placement. */
+async function adsDemographics(s: MetaSession, args: Record<string, unknown>) {
+  const account = await resolveAccount(s, args.compte);
+  const b = BREAKDOWNS[String(args.repartition ?? "age_sexe")] ?? BREAKDOWNS.age_sexe;
+  const campaign = typeof args.campagne === "string" && args.campagne.trim() ? args.campagne.trim() : "";
+  type Row = Insight & Record<string, string | undefined>;
+  const r = await graph<{ data: Row[] }>(`${account.id}/insights`, s.token, {
+    level: "account",
+    breakdowns: b.breakdowns,
+    fields: "spend,impressions,reach,inline_link_clicks,clicks,actions",
+    limit: "500",
+    ...(campaign ? { filtering: JSON.stringify([{ field: "campaign.name", operator: "CONTAIN", value: campaign }]) } : {}),
+    ...periodParams(args),
+  });
+  const rows = (r.data ?? [])
+    .map((x) => {
+      const spend = n(x.spend) ?? 0;
+      const impr = n(x.impressions) ?? 0;
+      const link = n(x.inline_link_clicks) ?? n(x.clicks) ?? 0;
+      const leads = pick(x.actions, LEAD_TYPES);
+      const purch = pick(x.actions, PURCHASE_TYPES);
+      const seg = b.breakdowns
+        .split(",")
+        .map((k) => (k === "gender" ? (GENDER[x.gender ?? ""] ?? x.gender) : x[k]))
+        .filter(Boolean)
+        .join(" · ");
+      return { seg, spend, impr, reach: n(x.reach) ?? 0, link, leads, purch };
+    })
+    .filter((x) => x.impr > 0)
+    .sort((a, z) => z.spend - a.spend);
+  if (!rows.length) return `Aucune diffusion sur la période pour ${account.name}${campaign ? ` (campagnes « ${campaign} »)` : ""}.`;
+  const tot = rows.reduce((a, x) => a + x.spend, 0);
+  const cur = account.currency;
+  return [
+    `#### Audience des publicités — ${b.label} · ${account.name}${campaign ? ` · campagnes « ${campaign} »` : ""} · ${rows[0] && r.data?.[0]?.date_start ? `du ${r.data[0].date_start} au ${r.data[0].date_stop}` : ""} · devise ${cur}`,
+    `| Segment | Dépenses | Part | Impr. | Portée | CTR lien | CPC | Leads | CPL | Achats | CPA |`,
+    "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+    ...rows.slice(0, 40).map(
+      (x) =>
+        `| ${x.seg} | ${fmt(x.spend)} | ${fmt(div(x.spend, tot, 100), 1)} % | ${fmt(x.impr, 0)} | ${fmt(x.reach, 0)} | ${fmt(div(x.link, x.impr, 100))} % | ${fmt(div(x.spend, x.link))} | ${x.leads ?? "—"} | ${fmt(div(x.spend, x.leads))} | ${x.purch ?? "—"} | ${fmt(div(x.spend, x.purch))} |`,
+    ),
+    rows.length > 40 ? `_(${rows.length - 40} segments de plus, non affichés)_` : "",
+    "_Segments triés par dépenses. Compare le CPL / CPA de chaque segment à la moyenne avant de recommander un ciblage : un segment avec peu de dépenses n'est pas significatif._",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+/** Abonnés Instagram par âge, sexe, ville et pays (autorisation instagram_manage_insights). */
+async function instagramDemographics(s: MetaSession, args: Record<string, unknown>) {
+  const all = await pages(s);
+  const w = typeof args.compte_instagram === "string" ? plainName(args.compte_instagram.replace(/^@/, "")) : "";
+  const page = all.find((p) => p.instagram_business_account && (!w || plainName(p.instagram_business_account.username ?? "").includes(w) || plainName(p.name).includes(w)));
+  const ig = page?.instagram_business_account;
+  if (!page || !ig) return "Aucun compte Instagram professionnel relié à une page Facebook accessible.";
+  const out: string[] = [];
+  for (const [breakdown, label] of [["age", "Âge"], ["gender", "Sexe"], ["country", "Pays"], ["city", "Villes"]] as const) {
+    type Res = { data: { total_value?: { breakdowns?: { results?: { dimension_values: string[]; value: number }[] }[] } }[] };
+    const r = await graph<Res>(`${ig.id}/insights`, page.access_token, { metric: "follower_demographics", period: "lifetime", metric_type: "total_value", breakdown }).catch((err) => {
+      if (!isPermissionError(err)) throw err;
+      throw new Error(
+        "statistiques d'abonnés Instagram indisponibles : l'autorisation instagram_manage_insights n'est pas accordée à l'app Meta de MARKOVA (elle n'est pas encore demandée à la connexion). " +
+          "Utilise meta_demographie source « pubs » (qui voit et convertit avec les publicités) à la place.",
+      );
+    });
+    const results = (r.data?.[0]?.total_value?.breakdowns?.[0]?.results ?? []).sort((a, z) => z.value - a.value).slice(0, 12);
+    const total = results.reduce((a, x) => a + x.value, 0);
+    if (results.length) {
+      out.push(`${label} : ${results.map((x) => `${breakdown === "gender" ? ({ M: "hommes", F: "femmes", U: "inconnu" }[x.dimension_values[0]] ?? x.dimension_values[0]) : x.dimension_values.join(" ")} ${x.value} (${fmt(div(x.value, total, 100), 0)} %)`).join(" · ")}`);
+    }
+  }
+  if (!out.length) return `Instagram @${ig.username ?? ""} : pas de données démographiques (Meta les fournit à partir de 100 abonnés).`;
+  return `#### Abonnés Instagram @${ig.username ?? ""} — répartition\n${out.map((l) => `- ${l}`).join("\n")}`;
+}
+
+async function demographics(s: MetaSession, args: Record<string, unknown>) {
+  const source = String(args.source ?? "pubs");
+  if (source === "instagram") return instagramDemographics(s, args);
+  if (source === "facebook") {
+    return "Meta ne fournit plus la répartition par âge, sexe ou ville des abonnés d'une page Facebook (statistiques supprimées de l'API). Utilise source « pubs » (qui voit et convertit avec tes publicités) ou « instagram ».";
+  }
+  return adsDemographics(s, args);
+}
+
+type CustomAudience = {
+  id: string; name: string; subtype?: string; description?: string; time_created?: number;
+  approximate_count_lower_bound?: number; approximate_count_upper_bound?: number;
+  delivery_status?: { code: number; description?: string }; operation_status?: { code: number; description?: string };
+};
+
+/** Audiences personnalisées et similaires existantes, pixels et pages utilisables comme source. */
+async function listAudiences(s: MetaSession, args: Record<string, unknown>) {
+  const account = await resolveAccount(s, args.compte);
+  const [aud, pixels, pgs] = await Promise.all([
+    graph<{ data: CustomAudience[] }>(`${account.id}/customaudiences`, s.token, {
+      fields: "id,name,subtype,description,approximate_count_lower_bound,approximate_count_upper_bound,delivery_status,operation_status",
+      limit: "100",
+    }),
+    graph<{ data: { id: string; name: string; last_fired_time?: string }[] }>(`${account.id}/adspixels`, s.token, { fields: "id,name,last_fired_time" }).catch(() => ({ data: [] })),
+    pages(s).catch(() => [] as Page[]),
+  ]);
+  const size = (a: CustomAudience) =>
+    a.approximate_count_lower_bound != null && a.approximate_count_lower_bound >= 0
+      ? `${fmt(a.approximate_count_lower_bound, 0)}–${fmt(a.approximate_count_upper_bound ?? null, 0)} personnes`
+      : "taille inconnue";
+  const list = (aud.data ?? []).map(
+    (a) => `- **${a.name}** · id ${a.id} · ${a.subtype ?? "?"} · ${size(a)}${a.delivery_status?.description ? ` · ${a.delivery_status.description}` : ""}`,
+  );
+  return [
+    `#### Audiences du compte ${account.name} (${account.id})`,
+    list.length ? list.join("\n") : "Aucune audience personnalisée.",
+    "",
+    `Pixels : ${(pixels.data ?? []).map((p) => `${p.name} (id ${p.id}${p.last_fired_time ? `, dernier événement ${p.last_fired_time.slice(0, 10)}` : ", jamais déclenché"})`).join(" · ") || "aucun"}`,
+    `Pages (source d'audiences d'engagement) : ${pgs.map((p) => `${p.name}${p.instagram_business_account ? ` + Instagram @${p.instagram_business_account.username ?? ""}` : ""}`).join(" · ") || "aucune"}`,
+    "_Pour créer une audience : proposer_action avec meta_audience_similaire, meta_audience_engagement ou meta_audience_site._",
+  ].join("\n");
+}
+
+/** Centres d'intérêt ciblables (taille d'audience estimée par Meta). */
+async function searchInterests(s: MetaSession, args: Record<string, unknown>) {
+  const q = String(args.recherche ?? "").trim();
+  if (!q) return "Indique un mot à rechercher.";
+  const r = await graph<{ data: { id: string; name: string; audience_size_lower_bound?: number; audience_size_upper_bound?: number; path?: string[]; topic?: string }[] }>(
+    "search",
+    s.token,
+    { type: "adinterest", q, limit: "20", locale: "fr_FR" },
+  );
+  if (!r.data?.length) return `Aucun centre d'intérêt Meta pour « ${q} ».`;
+  return (
+    `Centres d'intérêt Meta pour « ${q} » (taille mondiale estimée) :\n` +
+    r.data
+      .map((i) => `- ${i.name} · id ${i.id} · ${i.audience_size_lower_bound != null ? `${fmt(i.audience_size_lower_bound, 0)}–${fmt(i.audience_size_upper_bound ?? null, 0)}` : "?"}${i.path?.length ? ` · ${i.path.join(" › ")}` : ""}`)
+      .join("\n")
+  );
+}
+
 export const META_TOOLS: ToolSet["defs"] = [
   {
     name: "meta_comptes_pub",
@@ -656,6 +801,38 @@ export const META_TOOLS: ToolSet["defs"] = [
     description: "Profil Instagram professionnel (abonnés) et publications récentes avec likes, commentaires, portée, vues, enregistrements, partages.",
     parameters: { type: "object", properties: { compte: { type: "string", description: "@nom du compte (défaut : le premier)" }, max: { type: "number" } } },
   },
+  {
+    name: "meta_demographie",
+    label: "👥 Données démographiques",
+    description:
+      "Qui est ton audience. source « pubs » (défaut) : statistiques des publicités ventilées par repartition = age_sexe | pays | region | plateforme, avec dépenses, CTR, CPC, leads, CPL, achats, CPA par segment (filtre optionnel « campagne », période comme meta_performances) — c'est la meilleure base pour affiner un ciblage. " +
+      "source « instagram » : abonnés par âge, sexe, pays, ville. source « facebook » : non fourni par Meta.",
+    parameters: {
+      type: "object",
+      properties: {
+        source: { type: "string", enum: ["pubs", "instagram", "facebook"] },
+        repartition: { type: "string", enum: Object.keys(BREAKDOWNS) },
+        compte: { type: "string", description: "Compte publicitaire (défaut : actif)" },
+        campagne: { type: "string", description: "Texte contenu dans le nom des campagnes à analyser" },
+        compte_instagram: { type: "string" },
+        periode: { type: "string" },
+        date_debut: { type: "string" },
+        date_fin: { type: "string" },
+      },
+    },
+  },
+  {
+    name: "meta_audiences",
+    label: "🎯 Audiences Meta",
+    description: "Liste les audiences personnalisées et similaires du compte publicitaire (id, type, taille), les pixels et les pages utilisables comme source. À appeler avant de proposer une nouvelle audience.",
+    parameters: { type: "object", properties: { compte: { type: "string" } } },
+  },
+  {
+    name: "meta_interets",
+    label: "🔎 Centres d'intérêt Meta",
+    description: "Cherche les centres d'intérêt ciblables dans Meta Ads (nom exact, id, taille estimée) pour construire un ciblage par intérêts.",
+    parameters: { type: "object", properties: { recherche: { type: "string" } }, required: ["recherche"] },
+  },
 ];
 
 export async function runMetaTool(s: MetaSession, name: string, args: Record<string, unknown>): Promise<string | null> {
@@ -674,13 +851,26 @@ export async function runMetaTool(s: MetaSession, name: string, args: Record<str
       return pageInsights(s, args);
     case "instagram_publications":
       return instagramPosts(s, args);
+    case "meta_demographie":
+      return demographics(s, args);
+    case "meta_audiences":
+      return listAudiences(s, args);
+    case "meta_interets":
+      return searchInterests(s, args);
     default:
       return null;
   }
 }
 
 // ─── Actions validées ────────────────────────────────────────────
-export const META_ACTION_KINDS = ["meta_pause", "meta_activer", "meta_budget"] as const;
+export const META_ACTION_KINDS = [
+  "meta_pause",
+  "meta_activer",
+  "meta_budget",
+  "meta_audience_similaire",
+  "meta_audience_engagement",
+  "meta_audience_site",
+] as const;
 
 type MetaObject = { id: string; name: string; effective_status: string; daily_budget?: string; account_id?: string };
 
@@ -688,8 +878,121 @@ async function metaObject(s: MetaSession, id: string) {
   return graph<MetaObject>(id, s.token, { fields: "id,name,effective_status,daily_budget,account_id" });
 }
 
-/** Libellé fiable construit à partir des vraies données Meta (nom réel, budget actuel). */
-export async function describeMetaAction(s: MetaSession, kind: string, params: Record<string, unknown>) {
+const clampInt = (v: unknown, min: number, max: number, def: number) => {
+  const x = Math.round(Number(v));
+  return Number.isFinite(x) ? Math.min(Math.max(x, min), max) : def;
+};
+
+/**
+ * Création d'audience : vérifie les sources auprès de Meta et fige les paramètres exacts
+ * (compte, page, ids) pour que l'exécution fasse exactement ce que l'utilisateur a validé.
+ */
+async function prepareAudience(s: MetaSession, kind: string, params: Record<string, unknown>) {
+  const account = await resolveAccount(s, params.compte);
+  const base = { compte_id: account.id };
+
+  if (kind === "meta_audience_similaire") {
+    const source = await graph<CustomAudience>(String(params.audience_source_id ?? ""), s.token, { fields: "id,name,approximate_count_lower_bound" }).catch(() => null);
+    if (!source) throw new Error("audience_source_id introuvable : relis les audiences avec meta_audiences");
+    const country = String(params.pays ?? "").trim().toUpperCase();
+    if (!/^[A-Z]{2}$/.test(country)) throw new Error("pays : code à 2 lettres (MG, FR, CA…)");
+    const pct = clampInt(params.pourcentage, 1, 10, 1);
+    const name = String(params.nom ?? "").trim() || `Similaire ${pct} % ${country} — ${source.name}`;
+    return {
+      summary: `Créer l'audience similaire « ${name} » : ${pct} % des personnes de ${country} les plus proches de « ${source.name} » (compte ${account.name})`,
+      params: { ...base, audience_source_id: source.id, pays: country, pourcentage: pct, nom: name },
+    };
+  }
+
+  if (kind === "meta_audience_engagement") {
+    const instagram = params.source === "instagram";
+    const page = await pickPage(s, params.page);
+    if (instagram && !page.instagram_business_account) throw new Error(`la page ${page.name} n'a pas de compte Instagram pro relié`);
+    const days = clampInt(params.jours, 1, 365, 90);
+    const label = instagram ? `Instagram @${page.instagram_business_account!.username ?? ""}` : `page Facebook ${page.name}`;
+    const name = String(params.nom ?? "").trim() || `Engagement ${instagram ? "Instagram" : "Facebook"} ${days} j — ${page.name}`;
+    return {
+      summary: `Créer l'audience « ${name} » : personnes ayant interagi avec ${label} ces ${days} derniers jours (compte ${account.name})`,
+      params: { ...base, source: instagram ? "instagram" : "page", source_id: instagram ? page.instagram_business_account!.id : page.id, jours: days, nom: name },
+    };
+  }
+
+  // meta_audience_site
+  const pixel = await graph<{ id: string; name: string }>(String(params.pixel_id ?? ""), s.token, { fields: "id,name" }).catch(() => null);
+  if (!pixel) throw new Error("pixel_id introuvable : relis les pixels avec meta_audiences");
+  const days = clampInt(params.jours, 1, 180, 30);
+  const contains = String(params.url_contient ?? "").trim();
+  const name = String(params.nom ?? "").trim() || `Visiteurs du site ${days} j${contains ? ` — ${contains}` : ""}`;
+  return {
+    summary: `Créer l'audience « ${name} » : visiteurs du site${contains ? ` (pages contenant « ${contains} »)` : ""} ces ${days} derniers jours, pixel ${pixel.name} (compte ${account.name})`,
+    params: { ...base, pixel_id: pixel.id, jours: days, url_contient: contains, nom: name },
+  };
+}
+
+async function createAudience(s: MetaSession, kind: string, p: Record<string, unknown>) {
+  const account = String(p.compte_id);
+  const name = String(p.nom);
+  let body: Record<string, string>;
+  if (kind === "meta_audience_similaire") {
+    body = {
+      name,
+      subtype: "LOOKALIKE",
+      origin_audience_id: String(p.audience_source_id),
+      lookalike_spec: JSON.stringify({ ratio: Number(p.pourcentage) / 100, country: String(p.pays) }),
+    };
+  } else if (kind === "meta_audience_engagement") {
+    const instagram = p.source === "instagram";
+    body = {
+      name,
+      prefill: "true",
+      rule: JSON.stringify({
+        inclusions: {
+          operator: "or",
+          rules: [
+            {
+              event_sources: [{ id: String(p.source_id), type: instagram ? "ig_business" : "page" }],
+              retention_seconds: Number(p.jours) * 86_400,
+              filter: { operator: "and", filters: [{ field: "event", operator: "eq", value: instagram ? "ig_business_profile_all" : "page_engaged" }] },
+            },
+          ],
+        },
+      }),
+    };
+  } else {
+    const contains = String(p.url_contient ?? "");
+    body = {
+      name,
+      prefill: "true",
+      rule: JSON.stringify({
+        inclusions: {
+          operator: "or",
+          rules: [
+            {
+              event_sources: [{ id: String(p.pixel_id), type: "pixel" }],
+              retention_seconds: Number(p.jours) * 86_400,
+              filter: contains
+                ? { operator: "and", filters: [{ field: "url", operator: "i_contains", value: contains }] }
+                : { operator: "and", filters: [{ field: "event", operator: "eq", value: "PageView" }] },
+            },
+          ],
+        },
+      }),
+    };
+  }
+  const r = await graph<{ id: string }>(`${account}/customaudiences`, s.token, body, "POST");
+  return `Audience « ${name} » créée (id ${r.id}). Meta met souvent quelques heures à la remplir avant qu'elle soit utilisable.`;
+}
+
+/**
+ * Libellé fiable construit à partir des vraies données Meta (nom réel, budget actuel), et paramètres
+ * définitifs à enregistrer (pour les audiences : compte et sources vérifiés).
+ */
+export async function prepareMetaAction(s: MetaSession, kind: string, params: Record<string, unknown>) {
+  if (kind.startsWith("meta_audience_")) return prepareAudience(s, kind, params);
+  return { summary: await describeMetaAction(s, kind, params), params };
+}
+
+async function describeMetaAction(s: MetaSession, kind: string, params: Record<string, unknown>) {
   const id = String(params.objet_id ?? "");
   if (!id) throw new Error("objet_id manquant");
   const o = await metaObject(s, id);
@@ -702,6 +1005,7 @@ export async function describeMetaAction(s: MetaSession, kind: string, params: R
 }
 
 export async function executeMetaAction(s: MetaSession, kind: string, params: Record<string, unknown>) {
+  if (kind.startsWith("meta_audience_")) return createAudience(s, kind, params);
   const id = String(params.objet_id ?? "");
   if (kind === "meta_pause") {
     await graph(id, s.token, { status: "PAUSED" }, "POST");

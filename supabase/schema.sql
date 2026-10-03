@@ -207,7 +207,41 @@ create table if not exists public.followups (
 );
 create index if not exists followups_due on public.followups (status, due_at);
 
+-- ─── Voix de marque (par projet ; un sous-projet sans voix hérite de celle de son parent) ───
+alter table public.projects add column if not exists brand_voice text;
+
+-- ─── Veille concurrentielle ─────────────────────────────────────
+-- Concurrents suivis : leurs pages (accueil, tarifs, offres) sont relues chaque jour.
+create table if not exists public.competitors (
+  id          uuid primary key default gen_random_uuid(),
+  user_id     uuid not null default auth.uid() references auth.users on delete cascade,
+  project_id  uuid references public.projects on delete set null,
+  name        text not null,
+  urls        text[] not null default '{}',
+  notes       text,
+  active      boolean not null default true,
+  created_at  timestamptz not null default now()
+);
+create index if not exists competitors_user on public.competitors (user_id, name);
+
+-- Historique : un relevé par page à chaque changement de contenu (prix, offres, messages, nouveautés).
+create table if not exists public.competitor_snapshots (
+  id             uuid primary key default gen_random_uuid(),
+  user_id        uuid not null default auth.uid() references auth.users on delete cascade,
+  competitor_id  uuid not null references public.competitors on delete cascade,
+  url            text not null,
+  content_hash   text not null,
+  page_text      text,                           -- texte lu (comparé ligne à ligne au passage suivant)
+  facts          jsonb not null default '{}',    -- { prix: [{produit, prix}], offres: [], messages: [], nouveautes: [] }
+  changes        jsonb not null default '[]',    -- [{ type: prix|offre|message|nouveaute, detail }]
+  error          text,
+  checked_at     timestamptz not null default now()
+);
+create index if not exists competitor_snapshots_comp on public.competitor_snapshots (competitor_id, url, checked_at desc);
+
 -- ─── RLS ────────────────────────────────────────────────────────
+alter table public.competitors          enable row level security;
+alter table public.competitor_snapshots enable row level security;
 alter table public.followups          enable row level security;
 alter table public.user_settings      enable row level security;
 alter table public.watch_rules        enable row level security;
@@ -226,7 +260,8 @@ do $$
 declare t text;
 begin
   foreach t in array array['projects', 'conversations', 'messages', 'memories', 'files', 'integrations', 'actions', 'custom_skills',
-                           'user_settings', 'watch_rules', 'notifications', 'push_subscriptions', 'followups'] loop
+                           'user_settings', 'watch_rules', 'notifications', 'push_subscriptions', 'followups',
+                           'competitors', 'competitor_snapshots'] loop
     execute format('drop policy if exists "owner_all" on public.%I', t);
     execute format(
       'create policy "owner_all" on public.%I for all to authenticated

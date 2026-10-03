@@ -16,6 +16,7 @@ export default function ProjectsPage() {
   const [currentId, setCurrentId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [editing, setEditing] = useState<string | "new" | null>(null);
+  const [voices, setVoices] = useState<Record<string, string> | null>(null);
 
   const load = useCallback(async () => {
     const supabase = createClient();
@@ -38,6 +39,9 @@ export default function ProjectsPage() {
     bump(m.data, "mems");
     setCounts(next);
     setProjects(p.data ?? []);
+    // Voix de marque lue à part : la colonne n'existe qu'après la mise à jour du schéma (null = pas encore).
+    const v = await supabase.from("projects").select("id, brand_voice");
+    setVoices(v.error ? null : Object.fromEntries((v.data ?? []).map((r) => [r.id as string, (r.brand_voice as string | null) ?? ""])));
     setCurrentId(getCurrentProjectId());
   }, []);
 
@@ -150,7 +154,7 @@ export default function ProjectsPage() {
             return (
               <div key={p.id} className={`card p-3.5 ${active ? "border-accent/60 bg-gradient-to-br from-soft to-panel" : ""}`}>
                 {editing === p.id ? (
-                  <ProjectForm project={p} projects={projects ?? []} onDone={() => { setEditing(null); load(); }} />
+                  <ProjectForm project={p} projects={projects ?? []} voice={voices ? (voices[p.id] ?? "") : null} onDone={() => { setEditing(null); load(); }} />
                 ) : (
                   <>
                     <div className="flex items-start gap-3">
@@ -168,6 +172,7 @@ export default function ProjectsPage() {
                       <span>{c.convs} conversations</span>
                       <span>{c.files} fichiers</span>
                       <span>{c.mems} mémoires</span>
+                      {voices?.[p.id] && <span className="text-cyan">🎙️ voix de marque</span>}
                     </div>
                     <div className="mt-3 flex gap-2">
                       {!active && (
@@ -197,10 +202,21 @@ export default function ProjectsPage() {
   );
 }
 
-function ProjectForm({ project, projects, onDone }: { project?: Project; projects: Project[]; onDone: (createdId?: string) => void }) {
+function ProjectForm({
+  project,
+  projects,
+  voice = null,
+  onDone,
+}: {
+  project?: Project;
+  projects: Project[];
+  voice?: string | null;
+  onDone: (createdId?: string) => void;
+}) {
   const [name, setName] = useState(project?.name ?? "");
   const [description, setDescription] = useState(project?.description ?? "");
   const [parent, setParent] = useState(project?.parent_id ?? "");
+  const [brandVoice, setBrandVoice] = useState(voice ?? "");
   const [busy, setBusy] = useState(false);
 
   async function save(e: React.FormEvent) {
@@ -211,6 +227,9 @@ function ProjectForm({ project, projects, onDone }: { project?: Project; project
     const values = { name: name.trim(), description: description.trim() || null, parent_id: parent || null, updated_at: new Date().toISOString() };
     if (project) {
       await supabase.from("projects").update(values).eq("id", project.id);
+      if (voice !== null && brandVoice.trim() !== voice.trim()) {
+        await supabase.from("projects").update({ brand_voice: brandVoice.trim() || null }).eq("id", project.id);
+      }
       onDone();
     } else {
       const { data } = await supabase.from("projects").insert(values).select("id").single();
@@ -234,6 +253,18 @@ function ProjectForm({ project, projects, onDone }: { project?: Project; project
             </option>
           ))}
       </select>
+      {project && voice !== null && (
+        <label className="block">
+          <span className="text-[12px] font-semibold text-muted">🎙️ Voix de marque (appliquée à tous les contenus de ce projet)</span>
+          <textarea
+            value={brandVoice}
+            onChange={(e) => setBrandVoice(e.target.value)}
+            rows={8}
+            placeholder={"Ton, tutoiement ou vouvoiement, cible, mots à utiliser / éviter, emojis, exemples…\nOu demande à MARKOVA : « Crée la voix de marque à partir de mes publications »."}
+            className="mt-1 w-full rounded-lg border border-line bg-soft px-3 py-2 text-[14px] outline-none focus:border-accent"
+          />
+        </label>
+      )}
       <div className="flex gap-2">
         <button disabled={busy || !name.trim()} className="flex-1 rounded-lg bg-accent-strong text-white h-10 text-[13px] font-semibold disabled:opacity-50">
           {project ? "Enregistrer" : "Créer et ouvrir"}

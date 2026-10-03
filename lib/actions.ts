@@ -15,7 +15,10 @@ export function proposeActionTool({ google, meta }: { google: boolean; meta: boo
         "sheets_ajouter_lignes (params: fichier_id, lignes [[…],[…]], feuille?) ajoute à la fin, sheets_ecrire (params: fichier_id, plage ex. « A1 » ou « Onglet!B2 », lignes, feuille?) remplace la plage, " +
         "sheets_creer (params: titre, lignes?, feuille?) — fichier_id = id Drive issu de drive_rechercher, lignes = tableau de lignes de valeurs, « compte » = adresse Google",
     meta &&
-      "meta_pause (params: objet_id), meta_activer (params: objet_id), meta_budget (params: objet_id, budget_quotidien en unités de la devise, ex. 25 pour 25 €) — objet_id = id de campagne, d'ensemble ou de publicité issu de meta_performances ; « compte » = « meta »",
+      "meta_pause (params: objet_id), meta_activer (params: objet_id), meta_budget (params: objet_id, budget_quotidien en unités de la devise, ex. 25 pour 25 €) — objet_id = id de campagne, d'ensemble ou de publicité issu de meta_performances ; « compte » = « meta » ; " +
+        "meta_audience_similaire (params: audience_source_id issu de meta_audiences, pays code ISO ex. « MG », pourcentage 1–10, nom?, compte?), " +
+        "meta_audience_engagement (params: source « page » ou « instagram », page = nom de la page, jours 1–365, nom?, compte?), " +
+        "meta_audience_site (params: pixel_id issu de meta_audiences, jours 1–180, url_contient?, nom?, compte?)",
   ]
     .filter(Boolean)
     .join(" ; ");

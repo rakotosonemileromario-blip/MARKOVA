@@ -14,12 +14,13 @@ export function cronAuthorized(req: Request) {
 
 /** Utilisateurs à traiter : ceux qui ont une connexion ou une règle de surveillance, avec leur fuseau et leurs réglages. */
 export async function cronUsers(admin: SupabaseClient) {
-  const [integ, rules, settings] = await Promise.all([
+  const [integ, rules, settings, competitors] = await Promise.all([
     admin.from("integrations").select("user_id").in("provider", ["google", "meta"]),
     admin.from("watch_rules").select("user_id").eq("active", true),
     admin.from("user_settings").select("user_id, timezone, weekly_report"),
+    admin.from("competitors").select("user_id").eq("active", true),
   ]);
-  const ids = new Set([...(integ.data ?? []), ...(rules.data ?? [])].map((r) => r.user_id as string));
+  const ids = new Set([...(integ.data ?? []), ...(rules.data ?? []), ...(competitors.data ?? [])].map((r) => r.user_id as string));
   const byUser = new Map((settings.data ?? []).map((s) => [s.user_id as string, s]));
   return [...ids].map((id) => {
     const s = byUser.get(id);

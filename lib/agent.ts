@@ -36,7 +36,7 @@ COLLECTER → COMPRENDRE → ANALYSER → CROISER LES DONNÉES → DÉTECTER →
 4. **Chiffres** : quand un bloc « KPI calculés par MARKOVA » est fourni, utilise ces valeurs telles quelles — elles sont calculées de façon exacte. Ne recalcule pas de tête ; si tu dois calculer autre chose, montre le calcul.
 5. **Validation** : tu n'exécutes jamais rien toi-même.
    - Pour les **tâches Google** (supprimer, terminer, créer), appelle l'outil \`proposer_action\` avec TOUTES les actions dans le tableau « actions » (un seul appel) : l'utilisateur voit automatiquement une carte avec un bouton **Confirmer** et c'est ce clic qui exécute. Ensuite, dis en une phrase que les actions attendent sa confirmation ci-dessous ; ne les répète PAS dans un bloc 🔐, ne demande pas de confirmation par écrit et n'affirme jamais qu'elles sont faites.
-   - **RÈGLE** : si l'outil \`proposer_action\` existe et que ta réponse recommande une action qu'il sait faire (tâche Google, pause / réactivation / budget Meta), tu DOIS l'appeler avant de conclure. Une recommandation exécutable sans bouton Confirmer est une réponse incomplète.
+   - **RÈGLE** : si l'outil \`proposer_action\` existe et que ta réponse recommande une action qu'il sait faire (tâche Google, pause / réactivation / budget / création d'audience Meta), tu DOIS l'appeler avant de conclure. Une recommandation exécutable sans bouton Confirmer est une réponse incomplète.
    - Pour tout le reste (publication, email, agenda…), l'exécution n'est pas encore disponible : présente l'action dans un bloc
      > **🔐 Action nécessitant validation**
      > Élément : … · Action : … · Motif : … · Impact estimé : …
@@ -141,8 +141,10 @@ export function buildSystemPrompt(opts: {
   meta?: { name: string } | null;
   project?: ProjectInfo;
   watchRules?: string[];
+  brandVoice?: { project: string; text: string; inherited: boolean } | null;
+  competitors?: string[];
 }) {
-  const { allSkills, activeSkills, memories, files, webSearch, google, meta, project, watchRules } = opts;
+  const { allSkills, activeSkills, memories, files, webSearch, google, meta, project, watchRules, brandVoice, competitors } = opts;
   const tz = opts.timezone;
   const now = new Date();
   const parts: string[] = [CORE];
@@ -165,6 +167,25 @@ export function buildSystemPrompt(opts: {
         `Quand l'utilisateur dit que deux projets sont complémentaires, qu'un projet est dans un autre, veut créer un projet ou changer de projet, utilise directement \`projets_lier\`, \`projet_creer\` ou \`projet_activer\` (pas de validation nécessaire : c'est de l'organisation interne).`,
     );
   }
+
+  if (project?.current) {
+    parts.push(
+      brandVoice
+        ? `## 🎙️ VOIX DE MARQUE${brandVoice.inherited ? ` (héritée du projet ${brandVoice.project})` : ""} — OBLIGATOIRE pour tout contenu\n` +
+            `Applique cette fiche à TOUT ce que tu rédiges pour ce projet (posts, pubs, accroches, scripts, emails, pages, réponses aux commentaires), sans la citer. ` +
+            `Si l'utilisateur demande explicitement autre chose pour un contenu, suis sa demande. Pour la modifier : \`voix_marque_lire\` puis \`voix_marque_definir\` avec la fiche entière.\n\n${brandVoice.text}`
+        : `## 🎙️ Voix de marque\nAucune fiche pour ce projet. Quand l'utilisateur demande un contenu, rédige-le puis propose en une phrase de créer la fiche (« Je crée la voix de marque à partir de tes publications ? ») : ` +
+            `analyse alors ses publications (facebook_publications / instagram_publications), son site (web_lire_page) ou ses fichiers, puis enregistre-la avec \`voix_marque_definir\`. S'il décrit sa marque lui-même, enregistre directement.`,
+    );
+  }
+
+  parts.push(
+    `## 🕵️ Veille concurrentielle automatique\n` +
+      `Outils : \`veille_ajouter\` (nom + pages à surveiller : accueil ET pages tarifs / offres ; trouve-les toi-même avec web_rechercher si besoin), \`veille_lister\`, \`veille_historique\` (prix, offres, messages actuels et changements), \`veille_verifier\` (relire maintenant), \`veille_supprimer\`. ` +
+      `Réglage interne : pas de validation. Les pages sont relues chaque jour (alerte si un prix ou une offre change) et une synthèse arrive chaque lundi. ` +
+      `Quand l'utilisateur parle d'un concurrent, compare-toi à lui ou demande « surveille X », utilise ces outils. Données de veille = [WEB] avec la page source.\n` +
+      (competitors?.length ? `Concurrents suivis : ${competitors.join(", ")}.` : "Aucun concurrent suivi pour l'instant."),
+  );
 
   if (google) {
     parts.push(
@@ -191,6 +212,8 @@ export function buildSystemPrompt(opts: {
       `## Meta connecté (${meta.name}) — Meta Ads · Facebook · Instagram\n` +
         `- Pour toute question sur les campagnes, publicités, budget, CPL, CTR, ROAS : appelle \`meta_performances\` (niveau campagne, puis ensemble ou publicité si besoin d'aller plus loin) au lieu de demander des chiffres. Les KPI renvoyés sont exacts : utilise-les tels quels.\n` +
         `- Pour analyser les messages, hooks et CTA : \`meta_creatifs\`. Réseaux sociaux organiques : \`meta_pages\` (liste des pages connectées et de leur Instagram — appelle-le dès que l'utilisateur parle de « mes pages » ou qu'une page n'est pas trouvée), \`facebook_publications\`, \`facebook_statistiques\` (portée, interactions, abonnés sur N jours), \`instagram_publications\`.\n` +
+        `- **Segmentation et ciblage** : \`meta_demographie\` (qui voit, clique et convertit : âge / sexe, pays, région, placement, avec CPL / CPA par segment ; abonnés Instagram), \`meta_audiences\` (audiences existantes, pixels, pages), \`meta_interets\` (centres d'intérêt ciblables). ` +
+        `Pour affiner une audience, compare les segments à la moyenne (en tenant compte du volume) puis propose avec \`proposer_action\` : meta_audience_similaire (lookalike d'une audience existante), meta_audience_engagement (personnes ayant interagi avec la page ou l'Instagram) ou meta_audience_site (visiteurs du site via le pixel). La création n'a lieu qu'après le clic sur Confirmer.\n` +
         `- Si un outil répond « autorisation Meta manquante », continue avec les données disponibles, puis donne UNIQUEMENT la marche à suivre indiquée dans le message de l'outil (ne parle pas de Business Manager ni d'App Review, et ne fais pas de bloc 🔐 pour ça).\n` +
         `- Précise toujours la période analysée. Évalue la suffisance des données avant de conclure (volume, durée, phase d'apprentissage).\n` +
         `- Pause, réactivation, budget : uniquement via \`proposer_action\` (meta_pause, meta_activer, meta_budget) et seulement si les données et les règles de la mémoire le justifient. Ne rien proposer est une réponse valable.\n` +

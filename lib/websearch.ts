@@ -5,11 +5,18 @@ export type WebResults = { answer?: string; results: { title: string; url: strin
 export const hasWebSearchProvider = () => Boolean(process.env.TAVILY_API_KEY);
 
 /** Recherche Web via Tavily (offre gratuite mensuelle). Fonctionne quel que soit le modèle IA. */
-export async function searchWeb(query: string): Promise<WebResults> {
+export async function searchWeb(query: string, opts: { topic?: "general" | "news"; days?: number } = {}): Promise<WebResults> {
   const res = await fetch("https://api.tavily.com/search", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.TAVILY_API_KEY}` },
-    body: JSON.stringify({ query: query.slice(0, 400), max_results: 6, search_depth: "basic", include_answer: "basic" }),
+    body: JSON.stringify({
+      query: query.slice(0, 400),
+      max_results: 6,
+      search_depth: "basic",
+      include_answer: "basic",
+      ...(opts.topic ? { topic: opts.topic } : {}),
+      ...(opts.days ? { days: opts.days } : {}),
+    }),
     signal: AbortSignal.timeout(20_000),
   });
   if (!res.ok) throw new Error(`Recherche Web : HTTP ${res.status}`);

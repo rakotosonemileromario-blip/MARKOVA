@@ -233,26 +233,54 @@ const PLAN_SYSTEM = `${COMMON}
  */
 export async function projectKnowledge(supabase: SupabaseClient, projectId: string | null) {
   if (!projectId) return "";
-  const [{ data: project }, { data: mems }, { data: files }] = await Promise.all([
+  const [{ data: project }, { data: mems }, { data: files }, { data: convs }] = await Promise.all([
     supabase.from("projects").select("name, description").eq("id", projectId).maybeSingle(),
     supabase.from("memories").select("category, content").eq("project_id", projectId).eq("active", true).limit(40),
     supabase.from("files").select("name, extracted_text").eq("project_id", projectId).eq("status", "pret").not("extracted_text", "is", null).order("created_at", { ascending: false }).limit(10),
+    supabase.from("conversations").select("id").eq("project_id", projectId).order("updated_at", { ascending: false }).limit(20),
   ]);
+  // Ce que l'utilisateur a écrit dans les discussions du projet (ex. texte de son site collé, description de l'offre) :
+  // seulement ses messages assez longs pour décrire quelque chose, les plus récents d'abord.
+  const { data: said } = convs?.length
+    ? await supabase
+        .from("messages")
+        .select("content")
+        .in("conversation_id", convs.map((c) => c.id))
+        .eq("role", "user")
+        .order("created_at", { ascending: false })
+        .limit(60)
+    : { data: [] };
   let budget = 18_000;
+  const take = (text: string) => {
+    const t = text.trim().slice(0, Math.max(0, budget));
+    budget -= t.length;
+    return t;
+  };
   const docs = (files ?? [])
     .map((f) => {
-      const text = String(f.extracted_text ?? "").trim().slice(0, Math.max(0, budget));
-      budget -= text.length;
-      return text ? `### 📎 ${f.name}\n${text}` : "";
+      const t = take(String(f.extracted_text ?? ""));
+      return t ? `### 📎 ${f.name}\n${t}` : "";
     })
+    .filter(Boolean);
+  budget = 14_000;
+  const messages = (said ?? [])
+    .map((m) => String(m.content ?? ""))
+    .filter((t) => t.length >= 120)
+    .map((t) => take(t))
     .filter(Boolean);
   return [
     project?.description ? `DESCRIPTION DU PROJET : ${project.description}` : "",
     mems?.length ? `MÉMOIRE DU PROJET :\n${mems.map((m) => `- (${m.category}) ${m.content}`).join("\n")}` : "",
     docs.length ? `FICHIERS DU PROJET :\n${docs.join("\n\n")}` : "",
+    messages.length ? `CE QUE L'UTILISATEUR A ÉCRIT DANS LES DISCUSSIONS DU PROJET (du plus récent au plus ancien) :\n${messages.map((t) => `---\n${t}`).join("\n")}` : "",
   ]
     .filter(Boolean)
     .join("\n\n");
+}
+
+/** Premier lien de site donné par l'utilisateur dans les informations du projet (lu par l'étape « offres »). */
+export function siteFromKnowledge(knowledge: string) {
+  return knowledge.match(/https?:\/\/[^\s<>()"'`]+/)?.[0]?.replace(/[.,;:!?»]+$/, "") ?? null;
 }
 
 export async function runStep(s: Study, step: Step, base: string, knowledge = "") {
@@ -318,6 +346,8 @@ export async function runStudy(supabase: SupabaseClient, studyId: string, deadli
     ? await supabase.from("projects").select("name, description, brand_voice").eq("id", s.project_id).maybeSingle()
     : { data: null };
   const knowledge = await projectKnowledge(supabase, s.project_id);
+  // Site donné dans une discussion du projet : lu à l'étape « offres » si aucun site n'a été précisé au lancement.
+  if (!s.inputs.site) s.inputs.site = siteFromKnowledge(knowledge) ?? undefined;
 
   try {
     for (const step of STEPS) {
@@ -715,8 +745,8 @@ export async function runMarketTool(
   const offres = String(args.offres ?? "").trim();
   if (!args.site && offres.length < 60 && !(await projectKnowledge(supabase, project.id))) {
     return (
-      `Je ne sais pas encore ce que vend « ${project.name} » : ni description, ni mémoire, ni fichier dans le projet. ` +
-      `Demande à l'utilisateur ses offres (produits ou services, formules, prix, pour qui) ou son site, ou de joindre sa fiche produit au projet, puis relance avec « offres » ou « site ». Ne lance pas l'étude sans ces informations.`
+      `Je ne connais pas encore l'offre de « ${project.name} » : je n'ai rien trouvé dans sa description, sa mémoire, ses fichiers ni ses discussions. ` +
+      `Pour lancer l'étude sans rien inventer, il me faut au moins l'un de ces éléments : la description de tes offres (produit ou service, formules, prix, pour qui), le lien de ton site, ou ta fiche produit ajoutée au projet.`
     );
   }
   const { data: created, error: insErr } = await supabase

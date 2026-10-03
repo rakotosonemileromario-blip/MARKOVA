@@ -518,8 +518,12 @@ async function listPages(s: MetaSession) {
   if (!all.length) return "Aucune page Facebook accessible avec cette connexion (vérifie le choix des pages dans Connexions).";
   const details = await Promise.all(
     all.map(async (p) => {
-      const info = await graph<{ fan_count?: number; followers_count?: number; category?: string }>(p.id, p.access_token, { fields: "fan_count,followers_count,category" }).catch(() => null);
-      return `- **${p.name}** · id ${p.id}${info?.category ? ` · ${info.category}` : ""}${info?.followers_count != null ? ` · ${info.followers_count} abonnés` : ""}${info?.fan_count != null ? ` · ${info.fan_count} mentions J'aime` : ""}${p.instagram_business_account ? ` · Instagram @${p.instagram_business_account.username ?? p.instagram_business_account.id}` : " · pas d'Instagram pro relié"}`;
+      type Info = { fan_count?: number; followers_count?: number; category?: string; location?: { country?: string; city?: string } };
+      const info =
+        (await graph<Info>(p.id, p.access_token, { fields: "fan_count,followers_count,category,location" }).catch(() => null)) ??
+        (await graph<Info>(p.id, p.access_token, { fields: "fan_count,followers_count,category" }).catch(() => null));
+      const where = [info?.location?.city, info?.location?.country].filter(Boolean).join(", ");
+      return `- **${p.name}** · id ${p.id}${info?.category ? ` · ${info.category}` : ""}${where ? ` · lieu ${where}` : ""}${info?.followers_count != null ? ` · ${info.followers_count} abonnés` : ""}${info?.fan_count != null ? ` · ${info.fan_count} mentions J'aime` : ""}${p.instagram_business_account ? ` · Instagram @${p.instagram_business_account.username ?? p.instagram_business_account.id}` : " · pas d'Instagram pro relié"}`;
     }),
   );
   return `${all.length} page(s) connectée(s) :\n${details.join("\n")}`;

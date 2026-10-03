@@ -6,6 +6,8 @@ import { ACTION_KINDS, describeAction, getGoogleSessions, googleToolDefs, runGoo
 import { getMetaSession, META_ACTION_KINDS, META_TOOLS, prepareMetaAction, runMetaTool } from "@/lib/meta";
 import { BRAND_TOOLS, getBrandVoice, runBrandTool } from "@/lib/brand";
 import { runVeilleTool, VEILLE_TOOLS } from "@/lib/veille";
+import { getMarkets, latestStudies, MARKET_TOOLS, runMarketTool, runStudy } from "@/lib/market";
+import { after } from "next/server";
 import { isMetaAction, proposeActionTool } from "@/lib/actions";
 import { hasWebSearchProvider, searchWeb, webResultsToPrompt, webResultsToSources } from "@/lib/websearch";
 import { runWebTool, WEB_TOOLS } from "@/lib/webtools";
@@ -18,7 +20,8 @@ import { FOLLOWUP_TOOLS, runFollowupTool } from "@/lib/followups";
 
 type ProposedAction = { id: string; kind: string; account_email: string; summary: string; reason: string | null; status: string };
 
-export const maxDuration = 60;
+// 300 s : une étude de marché lancée depuis le chat continue en arrière-plan après la réponse (after).
+export const maxDuration = 300;
 
 const HISTORY_LIMIT = 30;
 const MAX_INLINE_BYTES = 15 * 1024 * 1024;
@@ -26,6 +29,7 @@ const MAX_INLINE_BYTES = 15 * 1024 * 1024;
 type Body = { conversationId?: string; message?: string; fileIds?: string[]; webSearch?: boolean; voice?: boolean };
 
 export async function POST(req: Request) {
+  const startedAt = Date.now();
   const auth = await requireUser();
   if (!auth) return Response.json({ error: "Non authentifié" }, { status: 401 });
   const { supabase, user } = auth;
@@ -130,7 +134,7 @@ export async function POST(req: Request) {
   const previousUser = turns.filter((t) => t.role === "user").slice(-2, -1)[0]?.text ?? "";
   const activeSkills = selectSkills(allSkills, `${message}\n${previousUser}`, message);
 
-  const [googleAccounts, meta, watchRules, brandVoice, competitors] = await Promise.all([
+  const [googleAccounts, meta, watchRules, brandVoice, competitors, marketList, studies] = await Promise.all([
     getGoogleSessions(supabase, { timezone }).catch(() => []),
     getMetaSession(supabase).catch(() => null),
     listWatchRules(supabase).catch(() => []),
@@ -141,7 +145,18 @@ export async function POST(req: Request) {
       .eq("active", true)
       .order("name")
       .then((r) => (r.data ?? []).map((c) => String(c.name))),
+    getMarkets(supabase, projects.current?.id ?? null).catch(() => []),
+    latestStudies(supabase, projects.current?.id ?? null).catch(() => []),
   ]);
+  // Études lancées pendant ce tour : elles tournent après la réponse, dans le temps restant de la requête.
+  const startStudy = (id: string) => {
+    const work = () => runStudy(supabase, id, startedAt + maxDuration * 1000 - 10_000).catch(() => "erreur");
+    try {
+      after(work);
+    } catch {
+      void work(); // hors du contexte de la requête : lancée tout de suite (la page « Marché » la reprendra si besoin)
+    }
+  };
 
   // Actions proposées pendant ce tour : enregistrées « en attente », jamais exécutées ici.
   const proposedActions: ProposedAction[] = [];
@@ -231,6 +246,7 @@ export async function POST(req: Request) {
       ...FOLLOWUP_TOOLS,
       ...BRAND_TOOLS,
       ...VEILLE_TOOLS,
+      ...MARKET_TOOLS,
       ...(googleAccounts.length ? googleToolDefs(googleAccounts) : []),
       ...(meta ? META_TOOLS : []),
       ...(proposeTool ? [proposeTool] : []),
@@ -249,6 +265,8 @@ export async function POST(req: Request) {
       if (brand !== null) return brand;
       const veille = await runVeilleTool(supabase, name, args, { userId: user.id, projectId: projects.current?.id ?? null, timezone });
       if (veille !== null) return veille;
+      const market = await runMarketTool(supabase, name, args, { userId: user.id, current: projects.current, all: projects.all, start: startStudy });
+      if (market !== null) return market;
       if (name === "proposer_action") return proposeActions(args);
       if (meta) {
         const m = await runMetaTool(meta, name, args);
@@ -274,6 +292,7 @@ export async function POST(req: Request) {
     watchRules: watchRules.map((r) => describeRule(r)),
     brandVoice,
     competitors,
+    markets: { list: marketList, studies },
     project: {
       current: projects.current,
       linked: linked.map((l) => ({ name: l.project.name, description: l.project.description, relation: l.relation })),

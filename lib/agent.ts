@@ -143,8 +143,12 @@ export function buildSystemPrompt(opts: {
   watchRules?: string[];
   brandVoice?: { project: string; text: string; inherited: boolean } | null;
   competitors?: string[];
+  markets?: {
+    list: { label: string; country: string; region?: string | null; language: string; pages?: string[] }[];
+    studies: { market: string; country: string; region: string | null; status: string; synthese: string | null; date: string }[];
+  } | null;
 }) {
-  const { allSkills, activeSkills, memories, files, webSearch, google, meta, project, watchRules, brandVoice, competitors } = opts;
+  const { allSkills, activeSkills, memories, files, webSearch, google, meta, project, watchRules, brandVoice, competitors, markets } = opts;
   const tz = opts.timezone;
   const now = new Date();
   const parts: string[] = [CORE];
@@ -176,6 +180,29 @@ export function buildSystemPrompt(opts: {
             `Si l'utilisateur demande explicitement autre chose pour un contenu, suis sa demande. Pour la modifier : \`voix_marque_lire\` puis \`voix_marque_definir\` avec la fiche entière.\n\n${brandVoice.text}`
         : `## 🎙️ Voix de marque\nAucune fiche pour ce projet. Quand l'utilisateur demande un contenu, rédige-le puis propose en une phrase de créer la fiche (« Je crée la voix de marque à partir de tes publications ? ») : ` +
             `analyse alors ses publications (facebook_publications / instagram_publications), son site (web_lire_page) ou ses fichiers, puis enregistre-la avec \`voix_marque_definir\`. S'il décrit sa marque lui-même, enregistre directement.`,
+    );
+  }
+
+  if (project?.current) {
+    const list = markets?.list ?? [];
+    const studies = markets?.studies ?? [];
+    parts.push(
+      `## 🌍 Marchés du projet (international : n'importe quel pays, région, langue)\n` +
+        (list.length
+          ? list
+              .map((m) => `- **${m.label}** · pays ${m.country}${m.region ? ` · ${m.region}` : ""} · langue ${m.language}${m.pages?.length ? ` · pages : ${m.pages.join(", ")}` : ""}`)
+              .join("\n")
+          : "Aucun marché déclaré. Dès que c'est utile (contenu pour une page, pub, étude), déduis les marchés des pages (meta_pages : nom, pays ; langue des publications) ou du site, puis enregistre-les avec `marches_definir` (sans validation) ; demande seulement si c'est ambigu.") +
+        `\n**Tout contenu, pub ou conseil destiné à une page s'adapte au marché de cette page** : langue, devise, références culturelles, vocabulaire local, fuseau horaire et jours fériés. Si la page ou le marché visé n'est pas clair, demande-le en une phrase.\n` +
+        `Étude de marché (cibles, besoins, PESTEL, mots-clés Google du pays, sujets) : \`etude_marche_lancer\` (une par marché, en arrière-plan, ~15 recherches Web : jamais par habitude), \`etude_marche_lire\` pour le détail, \`marches_lister\`.` +
+        studies
+          .filter((s) => s.synthese)
+          .map((s) => `\n\n### Synthèse de l'étude — ${s.market} (${s.date})\nAppuie-toi dessus pour tout contenu ou ciblage sur ce marché.\n${s.synthese}`)
+          .join("") +
+        studies
+          .filter((s) => s.status === "en_cours" || s.status === "en_attente")
+          .map((s) => `\n- Étude en cours : ${s.market}.`)
+          .join(""),
     );
   }
 

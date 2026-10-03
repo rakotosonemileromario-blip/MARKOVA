@@ -21,6 +21,7 @@ export const NAV = [
   { href: "/chat", label: "Analyser", icon: "auto_awesome" },
   { href: "/fichiers", label: "Fichiers", icon: "folder_open" },
   { href: "/notifications", label: "Alertes", icon: "notifications" },
+  { href: "/marche", label: "Marché", icon: "travel_explore" },
   { href: "/veille", label: "Veille", icon: "radar" },
   { href: "/memoire", label: "Mémoire", icon: "memory" },
   { href: "/competences", label: "Compétences", icon: "extension" },

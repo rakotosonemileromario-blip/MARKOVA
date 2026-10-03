@@ -239,7 +239,33 @@ create table if not exists public.competitor_snapshots (
 );
 create index if not exists competitor_snapshots_comp on public.competitor_snapshots (competitor_id, url, checked_at desc);
 
+-- ─── Marchés visés par un projet (n'importe quel pays / région / langue) ───
+-- [{ label: « Québec (Canada) », country: « CA », region: « Québec », language: « fr », pages: [noms des pages Facebook / Instagram qui visent ce marché] }]
+alter table public.projects add column if not exists markets jsonb not null default '[]';
+
+-- ─── Études de marché (une par projet ET par marché) ───
+-- Étapes enregistrées au fur et à mesure (sections) : une étude interrompue reprend où elle s'était arrêtée.
+create table if not exists public.market_studies (
+  id           uuid primary key default gen_random_uuid(),
+  user_id      uuid not null default auth.uid() references auth.users on delete cascade,
+  project_id   uuid references public.projects on delete cascade,
+  market       text not null,                     -- libellé libre : « Québec (Canada) », « Belgique », « Sénégal »…
+  country      text not null,                     -- code pays ISO à 2 lettres (suggestions Google, actualités)
+  region       text,                              -- région ou ville visée, si plus précise que le pays
+  language     text not null default 'fr',        -- langue du marché (code ISO : fr, en, es, mg…)
+  inputs       jsonb not null default '{}',       -- offres, site, secteur donnés au lancement
+  sections     jsonb not null default '{}',       -- offres, cibles, besoins, pestel, mots_cles, sujets, synthese (markdown)
+  sources      jsonb not null default '[]',       -- [{ title, url }]
+  status       text not null default 'en_attente' check (status in ('en_attente', 'en_cours', 'terminee', 'erreur')),
+  error        text,
+  started_at   timestamptz,
+  created_at   timestamptz not null default now(),
+  updated_at   timestamptz not null default now()
+);
+create index if not exists market_studies_project on public.market_studies (user_id, project_id, created_at desc);
+
 -- ─── RLS ────────────────────────────────────────────────────────
+alter table public.market_studies       enable row level security;
 alter table public.competitors          enable row level security;
 alter table public.competitor_snapshots enable row level security;
 alter table public.followups          enable row level security;
@@ -261,7 +287,7 @@ declare t text;
 begin
   foreach t in array array['projects', 'conversations', 'messages', 'memories', 'files', 'integrations', 'actions', 'custom_skills',
                            'user_settings', 'watch_rules', 'notifications', 'push_subscriptions', 'followups',
-                           'competitors', 'competitor_snapshots'] loop
+                           'competitors', 'competitor_snapshots', 'market_studies'] loop
     execute format('drop policy if exists "owner_all" on public.%I', t);
     execute format(
       'create policy "owner_all" on public.%I for all to authenticated

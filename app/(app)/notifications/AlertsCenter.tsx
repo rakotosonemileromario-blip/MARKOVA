@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { Icon } from "@/components/ui";
 import { NOTIFICATIONS_EVENT } from "@/components/NotificationBell";
 import RuleBuilder from "./RuleBuilder";
+import { disablePush as turnOffPush, enablePush as turnOnPush, pushStatus } from "@/lib/push-client";
 
 type Notif = { id: string; kind: string; title: string; body: string; link: string | null; read_at: string | null; created_at: string };
 type Pending = { id: string; summary: string; conversation_id: string | null; created_at: string };
@@ -19,11 +20,6 @@ const KINDS: Record<string, { icon: string; cls: string; label: string }> = {
   probleme: { icon: "warning", cls: "text-warn bg-warn-soft", label: "Problème" },
 };
 
-function urlBase64ToUint8Array(base64: string) {
-  const pad = "=".repeat((4 - (base64.length % 4)) % 4);
-  const raw = atob((base64 + pad).replace(/-/g, "+").replace(/_/g, "/"));
-  return Uint8Array.from(raw, (c) => c.charCodeAt(0));
-}
 
 export default function AlertsCenter(props: {
   notifications: Notif[];
@@ -47,10 +43,9 @@ export default function AlertsCenter(props: {
 
   useEffect(() => {
     (async () => {
-      if (!("serviceWorker" in navigator) || !("PushManager" in window) || !props.pushReady) return setPush("indisponible");
-      if (Notification.permission === "denied") return setPush("bloque");
-      const reg = await navigator.serviceWorker.getRegistration("/sw.js");
-      setPush((await reg?.pushManager.getSubscription()) ? "actif" : "inactif");
+      if (!props.pushReady) return setPush("indisponible");
+      const s = await pushStatus();
+      setPush(s === "sans-cles" ? "indisponible" : s);
     })();
   }, [props.pushReady]);
 
@@ -98,31 +93,16 @@ export default function AlertsCenter(props: {
 
   const enablePush = () =>
     run("push", async () => {
-      const permission = await Notification.requestPermission();
-      if (permission !== "granted") {
-        setPush(permission === "denied" ? "bloque" : "inactif");
-        throw new Error("Notifications refusées par le navigateur.");
-      }
-      const reg = (await navigator.serviceWorker.getRegistration("/sw.js")) ?? (await navigator.serviceWorker.register("/sw.js"));
-      await navigator.serviceWorker.ready;
-      const sub = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? ""),
-      });
-      const device = /Android|iPhone|iPad/i.test(navigator.userAgent) ? "Téléphone" : "Ordinateur";
-      await post("/api/push/subscribe", { subscription: sub.toJSON(), device, test: true });
-      setPush("actif");
+      const s = await turnOnPush(true);
+      setPush(s === "sans-cles" ? "indisponible" : s);
+      if (s === "bloque") throw new Error("Notifications bloquées : Paramètres du téléphone → Applications → MARKOVA → Notifications → Autoriser.");
+      if (s !== "actif") throw new Error("Notifications non acceptées.");
       return "Notifications activées sur cet appareil : une notification de test vient d'être envoyée.";
     });
 
   const disablePush = () =>
     run("push", async () => {
-      const reg = await navigator.serviceWorker.getRegistration("/sw.js");
-      const sub = await reg?.pushManager.getSubscription();
-      if (sub) {
-        await fetch("/api/push/subscribe", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ endpoint: sub.endpoint }) });
-        await sub.unsubscribe();
-      }
+      await turnOffPush();
       setPush("inactif");
       return "Notifications désactivées sur cet appareil.";
     });
@@ -205,7 +185,7 @@ export default function AlertsCenter(props: {
               <p className="text-[12px] text-muted">
                 {push === "actif" && "Actives : tu seras prévenu même MARKOVA fermé."}
                 {push === "inactif" && "Active-les sur ton PC et sur ton téléphone (fais-le sur chaque appareil)."}
-                {push === "bloque" && "Bloquées par le navigateur : autorise les notifications pour ce site dans les réglages du navigateur."}
+                {push === "bloque" && "Bloquées : sur le téléphone, Paramètres → Applications → MARKOVA → Notifications → Autoriser (ou, dans un navigateur, autorise ce site)."}
                 {push === "indisponible" && (props.pushReady ? "Non prises en charge par ce navigateur. Sur iPhone : ajoute MARKOVA à l'écran d'accueil d'abord." : "Clés de notification absentes sur le serveur (VAPID).")}
                 {push === "inconnu" && "…"}
               </p>

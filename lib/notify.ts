@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import webpush from "web-push";
+import { secretEnv } from "./supabase/admin";
 
 // Notifications : enregistrées dans la table « notifications » (cloche dans l'app)
 // et envoyées en push sur les appareils abonnés (PC, téléphone), gratuitement.
@@ -16,15 +17,15 @@ export const KIND_LABELS: Record<NotificationKind, { emoji: string; label: strin
 
 export type NewNotification = { kind: NotificationKind; title: string; body?: string; link?: string; dedupeKey?: string };
 
-export const pushConfigured = () => Boolean(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY);
+export const pushConfigured = () => Boolean(secretEnv("NEXT_PUBLIC_VAPID_PUBLIC_KEY") && secretEnv("VAPID_PRIVATE_KEY"));
 
 let vapidReady = false;
 function initVapid() {
   if (vapidReady || !pushConfigured()) return vapidReady;
   webpush.setVapidDetails(
-    process.env.VAPID_SUBJECT || "https://markova.app",
-    process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!,
-    process.env.VAPID_PRIVATE_KEY!,
+    secretEnv("VAPID_SUBJECT") || "https://markova.app",
+    secretEnv("NEXT_PUBLIC_VAPID_PUBLIC_KEY"),
+    secretEnv("VAPID_PRIVATE_KEY"),
   );
   vapidReady = true;
   return true;

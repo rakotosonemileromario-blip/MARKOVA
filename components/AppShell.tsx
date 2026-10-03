@@ -9,6 +9,7 @@ import ProjectSwitcher from "./ProjectSwitcher";
 import DeviceSync from "./DeviceSync";
 import ScrollReveal from "./ScrollReveal";
 import NotificationBell, { UnreadBadge, useUnreadCount } from "./NotificationBell";
+import PushPrompt from "./PushPrompt";
 import { useTones } from "@/lib/tones";
 
 // Téléphone : 2 onglets à gauche, Kimia au centre, 2 à droite (dont « Menu » qui ouvre tout le reste).
@@ -47,6 +48,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     <div className="h-[var(--app-h,100dvh)] flex">
       <DeviceSync />
       <ScrollReveal />
+      <PushPrompt />
       <Sidebar open={open} onClose={() => setOpen(false)} />
       <div className="flex-1 min-w-0 flex flex-col">
         {/* Barre du haut (téléphone) : le projet en cours, toujours visible */}

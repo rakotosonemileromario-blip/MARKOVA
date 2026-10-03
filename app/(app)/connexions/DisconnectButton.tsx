@@ -8,7 +8,7 @@ export default function DisconnectButton({ id, email }: { id: string; email: str
     <button
       disabled={busy}
       onClick={async () => {
-        if (!confirm(`Déconnecter ${email} ? MARKOVA n'aura plus accès à ses mails, son agenda, Drive et ses tâches.`)) return;
+        if (!confirm(`Déconnecter ${email} ? Kimia n'aura plus accès à ses mails, son agenda, Drive et ses tâches.`)) return;
         setBusy(true);
         await fetch("/api/google/disconnect", {
           method: "POST",

@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { cookies } from "next/headers";
-import { googleClients, googleConfigured, WRITE_SCOPES } from "@/lib/google";
+import { googleClients, googleConfigured, UPGRADE_SCOPES } from "@/lib/google";
 import { resolveTimezone, TZ_COOKIE } from "@/lib/timezone";
 import { Icon } from "@/components/ui";
 import DisconnectButton from "./DisconnectButton";
@@ -20,7 +20,7 @@ const ERRORS: Record<string, string> = {
 };
 
 const SOON = [
-  { name: "Google Analytics · Search Console", icon: "monitoring" },
+  { name: "Google Search Console", icon: "monitoring" },
   { name: "Mon Master Plan", icon: "flag" },
 ];
 
@@ -47,7 +47,7 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
     <div className="flex-1 overflow-y-auto">
       <div className="mx-auto max-w-3xl px-4 py-6">
         <h1 className="text-[24px] font-bold tracking-tight">Connexions</h1>
-        <p className="text-[13px] text-muted mt-1">Les outils que MARKOVA peut consulter pour toi.</p>
+        <p className="text-[13px] text-muted mt-1">Les outils que Kimia peut consulter pour toi.</p>
 
         {ok && (
           <p className="mt-4 flex items-center gap-2 rounded-lg bg-ok-soft px-3 py-2 text-[13px] text-ok">
@@ -66,11 +66,11 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
               <Icon name="mail" className="text-[21px] text-accent-text" />
             </span>
             <div className="min-w-0">
-              <h2 className="font-semibold">Google — Gmail · Agenda · Drive · Tâches · Sheets</h2>
+              <h2 className="text-[17px] font-bold">Google — Gmail · Agenda · Drive · Tâches · Sheets · Analytics</h2>
               <p className="text-[13px] text-muted mt-0.5">
-                MARKOVA lit mails, agenda, fichiers Drive et tâches de tous les comptes connectés. Il peut aussi gérer tes tâches et écrire
+                Kimia lit mails, agenda, fichiers Drive et tâches de tous les comptes connectés. Elle peut aussi gérer tes tâches et écrire
                 dans Google Sheets (ajouter des lignes, remplir une plage, créer un tableur), mais uniquement après ton clic sur « Confirmer ».
-                Il n'envoie aucun mail et ne modifie pas l'agenda.
+                Elle lit aussi les statistiques de ton site (Google Analytics). Elle n'envoie aucun mail et ne modifie pas l'agenda.
               </p>
             </div>
           </div>
@@ -85,11 +85,11 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
                     fuseau {timezone} · depuis le {new Date(a.updated_at).toLocaleDateString("fr-FR")}
                   </div>
                 </div>
-                {WRITE_SCOPES.some((s) => !(a.scopes ?? []).includes(s)) && (
+                {UPGRADE_SCOPES.some((s) => !(a.scopes ?? []).includes(s)) && (
                   <a
                     href={`/api/google/connect?client=${a.client_slot}`}
                     className="rounded-lg bg-warn-soft text-warn h-8 px-2.5 inline-flex items-center gap-1 text-[12px] font-semibold"
-                    title="Nécessaire pour que MARKOVA puisse gérer tes tâches et écrire dans Google Sheets, toujours après ta confirmation"
+                    title="Nécessaire pour les nouvelles fonctions : Google Analytics, tâches et Google Sheets (toujours après ta confirmation)"
                   >
                     <Icon name="sync" className="text-[16px]" /> Mettre à jour les autorisations
                   </a>
@@ -131,7 +131,7 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
             <div className="min-w-0">
               <h2 className="font-semibold">Meta — Ads · Facebook · Instagram</h2>
               <p className="text-[13px] text-muted mt-0.5">
-                MARKOVA lit tes campagnes (KPI exacts : CPL, CTR, CPM, ROAS…), tes créatifs, et les publications de tes pages Facebook et comptes
+                Kimia lit tes campagnes (KPI exacts : CPL, CTR, CPM, ROAS…), tes créatifs, et les publications de tes pages Facebook et comptes
                 Instagram. Il peut proposer de mettre en pause, réactiver ou changer un budget : rien n'est modifié sans ton clic sur « Confirmer ».
               </p>
             </div>

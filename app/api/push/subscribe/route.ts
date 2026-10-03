@@ -17,7 +17,7 @@ export async function POST(req: Request) {
   if (error) return Response.json({ error: error.message }, { status: 500 });
 
   if (test) {
-    await sendPush(auth.supabase, auth.user.id, { kind: "rapport", title: "Notifications activées", body: "MARKOVA pourra te prévenir sur cet appareil.", link: "/notifications" });
+    await sendPush(auth.supabase, auth.user.id, { kind: "rapport", title: "Notifications activées", body: "Kimia pourra te prévenir sur cet appareil.", link: "/notifications" });
   }
   return Response.json({ ok: true });
 }

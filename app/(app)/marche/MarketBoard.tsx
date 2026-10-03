@@ -195,7 +195,7 @@ export default function MarketBoard() {
 
         {studies?.length === 0 && !setupError && projectId && !launching && (
           <p className="mt-6 text-[13px] text-muted">
-            Aucune étude pour ce projet. Lance-en une avec « Étude », ou dis à MARKOVA : « Fais l&apos;étude de marché de ce projet pour le Québec ».
+            Aucune étude pour ce projet. Lance-en une avec « Étude », ou dis à Kimia : « Fais l&apos;étude de marché de ce projet pour le Québec ».
           </p>
         )}
 
@@ -220,8 +220,8 @@ function StudyView({ study, tab, setTab, onChange }: { study: Study; tab: Step; 
         <div className={`mt-3 rounded-lg border p-3 flex flex-wrap items-center gap-2 ${study.validated_at ? "border-ok/40 bg-ok-soft" : "border-warn/40 bg-warn-soft"}`}>
           <span className="flex-1 min-w-[200px] text-[13px]">
             {study.validated_at
-              ? `✅ Validée le ${day(study.validated_at)} : MARKOVA l'utilise dans les discussions du projet (contenus, pubs, notes de contenu).`
-              : "⏳ Pas encore validée : relis-la, puis valide-la pour que MARKOVA l'utilise dans les discussions du projet."}
+              ? `✅ Validée le ${day(study.validated_at)} : Kimia l'utilise dans les discussions du projet (contenus, pubs, notes de contenu).`
+              : "⏳ Pas encore validée : relis-la, puis valide-la pour que Kimia l'utilise dans les discussions du projet."}
           </span>
           <button
             onClick={async () => {

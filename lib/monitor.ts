@@ -126,7 +126,7 @@ export async function runSurveillance(supabase: SupabaseClient, userId: string, 
         await push({
           kind: "probleme",
           title: days > 0 ? `Accès Meta : expire dans ${days} jour${days > 1 ? "s" : ""}` : "Accès Meta expiré",
-          body: "Reconnecte Facebook dans Connexions pour que MARKOVA continue à lire tes campagnes.",
+          body: "Reconnecte Facebook dans Connexions pour que Kimia continue à lire tes campagnes.",
           link: "/connexions",
           dedupeKey: `meta-expire:${today}`,
         });
@@ -157,7 +157,7 @@ export async function runSurveillance(supabase: SupabaseClient, userId: string, 
             await push({
               kind: "alerte",
               title: `${METRICS[rule.metric].label} : ${c.name}`,
-              body: `${why} · ${PERIODS[rule.period] ?? rule.period} · compte ${c.account}. Aucune modification faite : demande à MARKOVA d'analyser avant d'agir.`,
+              body: `${why} · ${PERIODS[rule.period] ?? rule.period} · compte ${c.account}. Aucune modification faite : demande à Kimia d'analyser avant d'agir.`,
               link: `/chat?q=${encodeURIComponent(`Analyse la campagne « ${c.name} » : ${why}. Que recommandes-tu ?`)}&send=1`,
               dedupeKey: `regle:${rule.id}:${c.id}:${today}`,
             });
@@ -218,7 +218,7 @@ export async function runSurveillance(supabase: SupabaseClient, userId: string, 
     await push({
       kind: "validation",
       title: `${count} action${count > 1 ? "s" : ""} en attente de validation`,
-      body: "Des modifications proposées par MARKOVA attendent ton clic sur Confirmer ou Refuser.",
+      body: "Des modifications proposées par Kimia attendent ton clic sur Confirmer ou Refuser.",
       link: "/notifications",
       dedupeKey: `validation:${today}`,
     });

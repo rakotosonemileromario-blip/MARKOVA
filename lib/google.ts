@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { decrypt, encrypt } from "./crypto";
 import { detectKind, extractContent } from "./files";
+import { ANALYTICS_SCOPE, ANALYTICS_TOOLS, runAnalyticsTool } from "./analytics";
 
 // Lecture seule pour Gmail, Agenda et Drive. Google Tasks et Google Sheets en écriture : les modifications
 // ne sont faites qu'après validation de l'utilisateur (table « actions »).
@@ -8,6 +9,8 @@ export const TASKS_WRITE_SCOPE = "https://www.googleapis.com/auth/tasks";
 export const SHEETS_WRITE_SCOPE = "https://www.googleapis.com/auth/spreadsheets";
 /** Autorisations d'écriture à redemander aux comptes connectés avant leur ajout. */
 export const WRITE_SCOPES = [TASKS_WRITE_SCOPE, SHEETS_WRITE_SCOPE];
+/** Autorisations ajoutées après la première connexion : un compte qui ne les a pas doit « Mettre à jour les autorisations ». */
+export const UPGRADE_SCOPES = [...WRITE_SCOPES, ANALYTICS_SCOPE];
 export const GOOGLE_SCOPES = [
   "openid",
   "email",
@@ -15,6 +18,7 @@ export const GOOGLE_SCOPES = [
   "https://www.googleapis.com/auth/calendar.readonly",
   "https://www.googleapis.com/auth/drive.readonly",
   ...WRITE_SCOPES,
+  ANALYTICS_SCOPE,
 ];
 
 // ─── Clients OAuth ───────────────────────────────────────────────
@@ -580,6 +584,7 @@ export const GOOGLE_TOOLS: ToolDef[] = [
     description: "Liste les tâches Google Tasks non terminées, avec échéances et retards.",
     parameters: { type: "object", properties: { inclure_terminees: { type: "boolean" } } },
   },
+  ...ANALYTICS_TOOLS,
 ];
 
 /** Ajoute le paramètre « compte » à chaque outil quand plusieurs comptes sont connectés. */
@@ -652,6 +657,6 @@ async function runOne(s: GoogleSession, name: string, args: Record<string, unkno
     case "taches_lister":
       return listTasks(s, args as never);
     default:
-      return `Outil inconnu : ${name}`;
+      return (await runAnalyticsTool(s, name, args)) ?? `Outil inconnu : ${name}`;
   }
 }

@@ -269,7 +269,7 @@ export async function weeklyVeille(supabase: SupabaseClient, userId: string, tim
   }
 
   const skill = skills.find((s) => s.id === "veille-concurrentielle");
-  const system = `Tu es MARKOVA, l'agent marketing de l'utilisateur.${skill ? `\n\n# COMPÉTENCE : ${skill.name}\n${skill.prompt}` : ""}${SYNTHESIS_FORMAT}`;
+  const system = `Tu es Kimia, l'assistante marketing de l'utilisateur (application MARKOVA).${skill ? `\n\n# COMPÉTENCE : ${skill.name}\n${skill.prompt}` : ""}${SYNTHESIS_FORMAT}`;
   const text = (await ask(system, `Données de veille :\n\n${blocks.join("\n\n---\n\n")}`)).trim();
   if (!text) throw new Error("le modèle n'a renvoyé aucun texte");
 

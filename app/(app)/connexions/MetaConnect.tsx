@@ -32,7 +32,7 @@ export default function MetaConnect({ connected, appReady, appFromEnv, openPicke
   }
 
   async function disconnect() {
-    if (!confirm("Déconnecter Facebook ? MARKOVA n'aura plus accès à tes pages, comptes Instagram et publicités.")) return;
+    if (!confirm("Déconnecter Facebook ? Kimia n'aura plus accès à tes pages, comptes Instagram et publicités.")) return;
     setBusy(true);
     await fetch("/api/meta/disconnect", { method: "POST" });
     window.location.href = "/connexions";

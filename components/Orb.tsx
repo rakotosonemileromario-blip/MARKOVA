@@ -1,4 +1,4 @@
-/** Orbe animé de l'IA : calme au repos, s'accélère quand MARKOVA réfléchit, rougit quand il écoute. */
+/** Orbe animé de l'IA : calme au repos, s'accélère quand Kimia réfléchit, rougit quand elle écoute. */
 export default function Orb({ size = 40, state = "idle", className = "" }: { size?: number; state?: "idle" | "busy" | "listening"; className?: string }) {
   return (
     <span

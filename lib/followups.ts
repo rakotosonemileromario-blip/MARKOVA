@@ -13,7 +13,7 @@ export const FOLLOWUP_TOOLS: ToolSet["defs"] = [
     name: "relance_programmer",
     label: "⏰ Relance programmée",
     description:
-      "Programme un compte rendu automatique plus tard : à l'heure prévue, MARKOVA refait l'analyse demandée avec les données du moment, " +
+      "Programme un compte rendu automatique plus tard : à l'heure prévue, Kimia refait l'analyse demandée avec les données du moment, " +
       "écrit la réponse dans cette conversation et envoie une notification. Utilise-le dès que l'utilisateur dit « dans 3 h », « à 18 h », « demain matin », « rappelle-moi », « rends-moi compte »… " +
       "Donne soit dans_minutes, soit date_heure (heure locale de l'utilisateur).",
     parameters: {
@@ -24,7 +24,7 @@ export const FOLLOWUP_TOOLS: ToolSet["defs"] = [
         consigne: {
           type: "string",
           description:
-            "Ce que MARKOVA devra faire et rapporter à ce moment-là, rédigé de façon autonome et précise (ex. « Vérifie le CPL des campagnes actives sur aujourd'hui, compare avec ce matin (14,20 €) et dis si la baisse du budget a eu un effet »).",
+            "Ce que Kimia devra faire et rapporter à ce moment-là, rédigé de façon autonome et précise (ex. « Vérifie le CPL des campagnes actives sur aujourd'hui, compare avec ce matin (14,20 €) et dis si la baisse du budget a eu un effet »).",
         },
       },
       required: ["consigne"],
@@ -77,7 +77,7 @@ export async function runFollowupTool(
 
   const { error } = await supabase.from("followups").insert({ conversation_id: ctx.conversationId, due_at: due.toISOString(), instruction });
   if (error) return `Erreur : ${error.message}`;
-  return `Relance programmée pour ${formatLocal(due, ctx.timezone)} (fuseau ${ctx.timezone}). À ce moment, MARKOVA écrira le compte rendu dans cette conversation et enverra une notification.`;
+  return `Relance programmée pour ${formatLocal(due, ctx.timezone)} (fuseau ${ctx.timezone}). À ce moment, Kimia écrira le compte rendu dans cette conversation et enverra une notification.`;
 }
 
 type Followup = { id: string; user_id: string; conversation_id: string | null; due_at: string; instruction: string; created_at: string };

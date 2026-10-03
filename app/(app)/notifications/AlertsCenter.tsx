@@ -171,7 +171,7 @@ export default function AlertsCenter(props: {
           <div>
             <h1 className="text-[24px] font-bold tracking-tight">Alertes</h1>
             <p className="text-[13px] text-muted mt-1">
-              MARKOVA surveille tes campagnes, tâches et accès chaque jour et te prévient. Il ne modifie jamais rien tout seul.
+              Kimia surveille tes campagnes, tâches et accès chaque jour et te prévient. Elle ne modifie jamais rien tout seul.
             </p>
           </div>
           <button
@@ -270,7 +270,7 @@ export default function AlertsCenter(props: {
             <Icon name="alarm" className="text-[19px] text-warn" /> Comptes rendus programmés
           </h2>
           <p className="text-[12px] text-muted mt-1">
-            Dis dans le chat « rends-moi compte dans 3 h » ou « à 18 h, dis-moi si le CPL a baissé » : MARKOVA refait l'analyse à l'heure dite et te prévient.
+            Dis dans le chat « rends-moi compte dans 3 h » ou « à 18 h, dis-moi si le CPL a baissé » : Kimia refait l'analyse à l'heure dite et te prévient.
           </p>
           <ul className="mt-3 space-y-2">
             {props.followups.length === 0 && <li className="text-[13px] text-muted">Aucun compte rendu prévu.</li>}

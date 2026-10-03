@@ -178,7 +178,7 @@ export function flagUnseenKeywords(text: string, seen: Set<string>) {
     .join("\n");
 }
 
-const COMMON = `Tu es MARKOVA, agent de marketing digital, et tu réalises une ÉTUDE DE MARCHÉ pour un marché précis.
+const COMMON = `Tu es Kimia, l'assistante de marketing digital de l'application MARKOVA, et tu réalises une ÉTUDE DE MARCHÉ pour un marché précis.
 Règles :
 - Écris en français (c'est la langue de l'utilisateur), mais garde dans la langue du marché tout ce qui sera utilisé tel quel sur ce marché (mots-clés, accroches, expressions des clients).
 - Adapte-toi au marché : pays, région, langue, devise, culture, vocabulaire local (ex. québécismes au Québec, ariary à Madagascar).
@@ -364,7 +364,7 @@ export async function runStudy(supabase: SupabaseClient, studyId: string, deadli
         // On s'arrête plutôt que d'inventer le produit : l'utilisateur doit décrire ses offres.
         const missing = text.replace(/^\s*INFO_INSUFFISANTE\s*:?\s*/i, "").trim();
         throw new Error(
-          `MARKOVA ne sait pas encore ce que vend ce projet${missing ? ` (${missing.slice(0, 300)})` : ""}. Décris tes offres (produits, formules, prix, pour qui), donne le site, ou ajoute la fiche produit dans les fichiers du projet, puis relance l'étude.`,
+          `Kimia ne sait pas encore ce que vend ce projet${missing ? ` (${missing.slice(0, 300)})` : ""}. Décris tes offres (produits, formules, prix, pour qui), donne le site, ou ajoute la fiche produit dans les fichiers du projet, puis relance l'étude.`,
         );
       }
       s.sections[step] = text;

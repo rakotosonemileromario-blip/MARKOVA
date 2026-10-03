@@ -51,7 +51,7 @@
   --color-warn-soft: var(--warn-soft);
   --color-danger: var(--danger);
   --color-danger-soft: var(--danger-soft);
-  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-sans: var(--font-ui), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 html,
@@ -63,9 +63,66 @@ body {
   background: var(--bg);
   color: var(--ink);
   font-family: var(--font-sans);
-  letter-spacing: -0.005em;
+  font-size: 16px;
+  line-height: 1.55;
+  letter-spacing: -0.003em;
+  font-feature-settings: "cv11", "ss01";
   -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
+}
+
+h1, h2, h3 { letter-spacing: -0.02em; line-height: 1.2; }
+.tabular { font-variant-numeric: tabular-nums; }
+
+/* ─── Composants de base (boutons, champs) : grandes cibles tactiles, lisibles par tous ───
+   Dans la couche « components » : les utilitaires Tailwind (hidden, md:hidden, h-…) gardent la priorité. */
+@layer components {
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  height: 2.75rem;
+  padding: 0 1rem;
+  border-radius: 0.75rem;
+  font-size: 15px;
+  font-weight: 600;
+  border: 1px solid var(--line);
+  background: var(--soft);
+  color: var(--ink);
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+}
+.btn:hover { border-color: var(--accent); }
+.btn:active { transform: scale(0.98); }
+.btn:disabled { opacity: 0.5; pointer-events: none; }
+.btn-primary {
+  background: linear-gradient(135deg, var(--accent-strong), var(--accent));
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 8px 24px -10px rgba(79, 70, 229, 0.7);
+}
+.btn-primary:hover { filter: brightness(1.08); }
+.btn-ghost { background: transparent; border-color: transparent; color: var(--muted); }
+.btn-ghost:hover { background: var(--soft); color: var(--ink); border-color: transparent; }
+.btn-sm { height: 2.25rem; padding: 0 0.75rem; font-size: 14px; border-radius: 0.625rem; }
+
+.field {
+  width: 100%;
+  min-height: 2.75rem;
+  border-radius: 0.75rem;
+  border: 1px solid var(--line);
+  background: var(--soft);
+  padding: 0.6rem 0.85rem;
+  font-size: 16px; /* 16 px : évite le zoom automatique sur téléphone */
+  color: var(--ink);
+  outline: none;
+}
+.field:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.field::placeholder { color: var(--muted); }
+
+/* Titre de page + sous-titre, identiques partout */
+.page-title { font-size: 26px; font-weight: 800; letter-spacing: -0.025em; }
+.page-sub { margin-top: 0.25rem; font-size: 15px; color: var(--muted); }
 }
 
 ::selection { background: var(--accent-soft); }
@@ -93,9 +150,9 @@ body {
 
 /* Libellés de section en capitales */
 .label-caps {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
@@ -103,7 +160,7 @@ body {
 .card {
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 0.75rem;
+  border-radius: 1rem;
 }
 
 /* Halo du bouton central */

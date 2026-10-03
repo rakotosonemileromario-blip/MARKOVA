@@ -1,12 +1,13 @@
 import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
+import { Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 
-const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
+// Police unique, très lisible (chiffres et accents nets), du texte courant aux titres.
+const jakarta = Plus_Jakarta_Sans({ subsets: ["latin", "latin-ext"], variable: "--font-ui", display: "swap", weight: ["400", "500", "600", "700", "800"] });
 
 export const metadata: Metadata = {
   title: "MARKOVA",
-  description: "Agent personnel de Digital Marketing",
+  description: "Kimia, ton assistante de marketing digital",
 };
 
 export const viewport: Viewport = {
@@ -18,7 +19,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="fr" className={inter.variable} suppressHydrationWarning>
+    <html lang="fr" className={jakarta.variable} suppressHydrationWarning>
       <head>
         {/* Mode léger sur les appareils modestes (≤ 4 Go de RAM ou ≤ 4 cœurs), avant le premier affichage. */}
         <script

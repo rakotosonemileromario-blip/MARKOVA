@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { DEFAULT_VOICE, isVoice, VOICE_KEY, type VoiceId } from "./voices";
 
 // Voix gratuite : reconnaissance vocale du navigateur (Chrome, Edge, Android, Safari) pour le texte en direct,
 // ET enregistrement audio en parallèle : à l'arrêt, l'audio est retranscrit par le serveur (Gemini), qui connaît
@@ -86,7 +87,7 @@ export function useSpeechToText(onFinal: (text: string) => void) {
     if (p.recognition || p.audio === null) return; // on attend l'autre source
     const draft = finalText.current.trim();
     if (cancelled.current) return setState("idle");
-    // Texte de la dictée disponible : envoi immédiat (MARKOVA comprend les mots mal reconnus).
+    // Texte de la dictée disponible : envoi immédiat (Kimia comprend les mots mal reconnus).
     // La transcription serveur, plus lente, ne sert qu'en secours quand la dictée n'a rien donné.
     if (draft) return finish(draft);
     if (p.audio === "aucun" || p.audio.size < 2000) {
@@ -249,13 +250,55 @@ function plain(md: string) {
     .trim();
 }
 
-export function speak(markdown: string) {
+// Voix de Kimia : voix neuronale gratuite (serveur /api/tts) ; voix du téléphone en secours.
+let audio: HTMLAudioElement | null = null;
+let speakId = 0;
+
+export function getVoice(): VoiceId {
+  try {
+    const v = localStorage.getItem(VOICE_KEY);
+    return isVoice(v) ? v : DEFAULT_VOICE;
+  } catch {
+    return DEFAULT_VOICE;
+  }
+}
+
+export function setVoice(v: VoiceId) {
+  try {
+    localStorage.setItem(VOICE_KEY, v);
+  } catch {}
+}
+
+export async function speak(markdown: string, voice: VoiceId = getVoice()) {
+  stopSpeaking();
+  const id = ++speakId;
+  const text = plain(markdown).slice(0, 3000);
+  if (!text) return;
+  try {
+    const res = await fetch("/api/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, voice }) });
+    if (!res.ok) throw new Error(`voix indisponible (${res.status})`);
+    const url = URL.createObjectURL(await res.blob());
+    if (id !== speakId) return URL.revokeObjectURL(url); // une autre lecture a commencé entre-temps
+    audio = new Audio(url);
+    audio.onended = () => URL.revokeObjectURL(url);
+    await audio.play();
+  } catch {
+    if (id === speakId) speakWithDevice(text);
+  }
+}
+
+/** Voix du téléphone / du navigateur (secours, illimitée mais moins naturelle). */
+function speakWithDevice(text: string) {
   if (!("speechSynthesis" in window)) return;
   window.speechSynthesis.cancel();
-  const text = plain(markdown).slice(0, 4000);
   // Découpage en phrases : évite que certains navigateurs coupent les longs textes.
   const voices = window.speechSynthesis.getVoices();
-  const voice = voices.find((v) => v.lang === "fr-FR" && /natural|neural|google|online/i.test(v.name)) ?? voices.find((v) => v.lang.startsWith("fr"));
+  // Kimia est une femme : voix féminine naturelle si le téléphone en propose une.
+  const fr = voices.filter((v) => v.lang.startsWith("fr"));
+  const voice =
+    fr.find((v) => /natural|neural|online/i.test(v.name) && /denise|vivienne|eloise|sylvie|julie|amelie|female|femme/i.test(v.name)) ??
+    fr.find((v) => /natural|neural|google|online/i.test(v.name)) ??
+    fr[0];
   for (const sentence of text.match(/[^.!?]+[.!?]*/g) ?? [text]) {
     const u = new SpeechSynthesisUtterance(sentence.trim());
     u.lang = "fr-FR";
@@ -284,5 +327,11 @@ export async function speakSummary(markdown: string, vocal?: string | null) {
 }
 
 export function stopSpeaking() {
-  if (typeof window !== "undefined" && "speechSynthesis" in window) window.speechSynthesis.cancel();
+  if (typeof window === "undefined") return;
+  speakId++;
+  if (audio) {
+    audio.pause();
+    audio = null;
+  }
+  if ("speechSynthesis" in window) window.speechSynthesis.cancel();
 }

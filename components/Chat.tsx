@@ -6,11 +6,12 @@ import { createClient } from "@/lib/supabase/client";
 import { ACCEPT, uploadFile } from "@/lib/upload";
 import Markdown from "./Markdown";
 import MemoryProposal, { splitProposals } from "./MemoryProposal";
-import { NEW_CHAT_EVENT, REFRESH_EVENT } from "./Sidebar";
+import { NEW_CHAT_EVENT, newChat, REFRESH_EVENT } from "./Sidebar";
+import Link from "next/link";
 import { Icon } from "./ui";
 import Orb from "./Orb";
 import ActionCards, { type ActionItem } from "./ActionCards";
-import { PROJECT_EVENT, setCurrentProjectId } from "@/lib/project-client";
+import { getCurrentProjectId, PROJECT_EVENT, setCurrentProjectId } from "@/lib/project-client";
 import { speakSummary, stopSpeaking, useSpeechToText } from "@/lib/voice";
 
 export type Source = { title: string; uri: string };
@@ -22,12 +23,20 @@ export type Msg = {
 };
 type FileRef = { id: string; name: string };
 
+// Suggestions de l'accueil : des mots simples ; « send » = envoyé tout de suite, sinon pré-rempli pour compléter.
 const SUGGESTIONS = [
-  { icon: "wb_sunny", title: "Briefing du jour", text: "Fais-moi mon briefing du jour : agenda, mails importants et tâches." },
-  { icon: "query_stats", title: "Situation marketing", text: "Analyse ma situation marketing actuelle et dis-moi ce qu'on doit faire maintenant." },
-  { icon: "campaign", title: "Campagnes Meta Ads", text: "Analyse ces statistiques Meta Ads et dis-moi si je dois modifier quelque chose." },
-  { icon: "calendar_month", title: "Calendrier éditorial", text: "Prépare-moi le calendrier de contenu pour les deux prochaines semaines." },
+  { emoji: "📝", title: "Écrire un post", text: "Écris-moi un post Facebook pour mon projet, adapté à ma cible.", send: false },
+  { emoji: "📊", title: "Noter mon contenu", text: "D'après l'étude de marché, mon contenu est à combien ? Voici le texte : ", send: false },
+  { emoji: "🧭", title: "Où j'en suis ?", text: "Analyse ma situation marketing actuelle et dis-moi ce qu'on doit faire maintenant.", send: true },
+  { emoji: "🌅", title: "Mon briefing du jour", text: "Fais-moi mon briefing du jour : agenda, mails importants et tâches.", send: true },
+  { emoji: "📅", title: "Planning de contenu", text: "Prépare-moi le calendrier de contenu pour les deux prochaines semaines.", send: true },
+  { emoji: "🕵️", title: "Surveiller un concurrent", text: "Surveille mon concurrent : ", send: false },
 ];
+
+const hello = () => {
+  const h = new Date().getHours();
+  return h < 5 ? "Bonsoir" : h < 18 ? "Bonjour" : "Bonsoir";
+};
 
 const SKILL_LABELS: Record<string, string> = {
   "direction-marketing": "Direction",
@@ -61,6 +70,22 @@ export default function Chat({
   const cameraInput = useRef<HTMLInputElement>(null);
   const textarea = useRef<HTMLTextAreaElement>(null);
   const autoSent = useRef(false);
+  const [userName, setUserName] = useState("");
+  const [projectName, setProjectName] = useState<string | null>(null);
+
+  // Prénom de l'utilisateur et projet en cours (affichés dans l'en-tête et l'accueil).
+  useEffect(() => {
+    const supabase = createClient();
+    supabase.auth.getUser().then(({ data }) => setUserName(String(data.user?.user_metadata?.name ?? "").trim()));
+    const loadProject = async () => {
+      const pid = getCurrentProjectId();
+      const { data } = pid ? await supabase.from("projects").select("name").eq("id", pid).maybeSingle() : { data: null };
+      setProjectName(data?.name ?? null);
+    };
+    loadProject();
+    window.addEventListener(PROJECT_EVENT, loadProject);
+    return () => window.removeEventListener(PROJECT_EVENT, loadProject);
+  }, []);
 
   // Préférence recherche Web (confort local, sans incidence si le stockage est indisponible).
   useEffect(() => {
@@ -83,7 +108,7 @@ export default function Chat({
     const q = searchParams.get("q");
     if (q && searchParams.get("send") === "1" && !autoSent.current) {
       autoSent.current = true;
-      window.history.replaceState(null, "", "/chat");
+      window.history.replaceState(null, "", "/");
       send(q, { voice: searchParams.get("voice") === "1" });
       return;
     }
@@ -118,9 +143,14 @@ export default function Chat({
     return () => window.removeEventListener(NEW_CHAT_EVENT, reset);
   }, []);
 
+  // Défile vers le dernier message ; l'accueil (aucun message) reste affiché depuis le haut.
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+    if (messages.length) scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [messages]);
+
+  // Salutation calculée sur l'appareil (l'heure du serveur peut différer).
+  const [greeting, setGreeting] = useState("Bonjour");
+  useEffect(() => setGreeting(hello()), []);
 
   useEffect(() => {
     const el = textarea.current;
@@ -235,35 +265,55 @@ export default function Chat({
 
   return (
     <div className="flex-1 min-h-0 flex flex-col">
+      {/* En-tête de la discussion : avec qui, dans quel projet, et « Nouvelle discussion » toujours à portée */}
+      <div className="shrink-0 border-b border-[var(--hairline)] px-3 md:px-4 h-14 flex items-center gap-3">
+        <Orb size={30} state={busy ? "busy" : listening ? "listening" : "idle"} />
+        <div className="flex-1 min-w-0 leading-tight">
+          <div className="text-[16px] font-bold">Kimia</div>
+          <div className="text-[13px] text-muted truncate">
+            {busy ? "réfléchit…" : listening ? "t'écoute…" : `Projet : ${projectName ?? "Général"}`}
+          </div>
+        </div>
+        {!empty && (
+          <Link href="/" onClick={newChat} className="btn btn-sm">
+            <Icon name="edit_square" className="text-[18px]" /> <span className="hidden sm:inline">Nouvelle discussion</span>
+            <span className="sm:hidden">Nouvelle</span>
+          </Link>
+        )}
+      </div>
+
       <div ref={scrollRef} className="flex-1 overflow-y-auto">
         <div className="mx-auto max-w-3xl px-4 py-6">
           {empty ? (
-            <div className="pt-[3vh]">
+            <div className="pt-[2vh]">
               <div className="flex flex-col items-center text-center reveal">
-                <Orb size={84} />
-                <div className="mt-6 flex items-center gap-2 label-caps text-cyan">
-                  <span className="size-1.5 rounded-full bg-cyan animate-pulse" /> Directeur marketing IA · en ligne
-                </div>
-                <h1 className="mt-2 text-[28px] font-bold tracking-tight leading-tight text-holo">Que veux-tu analyser ?</h1>
-                <p className="text-muted mt-1.5 text-[14px] max-w-md">
-                  Parle, écris, joins des fichiers (PDF, DOCX, XLSX, CSV, images) ou prends une photo.
+                <Orb size={88} />
+                <h1 className="mt-5 text-[28px] sm:text-[32px] font-extrabold tracking-tight leading-tight">
+                  {greeting}
+                  {userName ? ` ${userName}` : ""} 👋
+                </h1>
+                <p className="mt-2 text-[17px] text-muted max-w-md leading-snug">
+                  Je suis <span className="text-holo font-bold">Kimia</span>, ton assistante marketing. Que veux-tu faire aujourd&apos;hui ?
                 </p>
+                <button onClick={mic.start} disabled={busy || uploading > 0} className="btn btn-primary mt-6 !h-14 !px-7 !text-[17px] !rounded-2xl pulse-glow">
+                  <Icon name="mic" filled className="text-[26px]" /> Appuie et parle à Kimia
+                </button>
+                <p className="mt-2.5 text-[14px] text-muted">ou écris ta question en bas de l&apos;écran ⬇️</p>
               </div>
-              <div className="mt-7 grid gap-2.5 sm:grid-cols-2">
+              <div className="mt-8 grid gap-2.5 grid-cols-2 sm:grid-cols-3">
                 {SUGGESTIONS.map((s, i) => (
                   <button
                     key={s.title}
-                    onClick={() => (s.icon === "wb_sunny" ? send(s.text) : setInput(s.text))}
+                    onClick={() => {
+                      if (s.send) return send(s.text);
+                      setInput(s.text);
+                      textarea.current?.focus();
+                    }}
                     style={{ ["--i" as string]: i + 2 }}
-                    className="card text-left p-3.5 hover:bg-soft transition-colors"
+                    className="card text-left p-3.5 hover:bg-soft transition-colors min-h-[84px]"
                   >
-                    <div className="flex items-center gap-2">
-                      <span className="grid place-items-center size-8 rounded-lg bg-accent-soft text-accent-text">
-                        <Icon name={s.icon} className="text-[18px]" />
-                      </span>
-                      <span className="font-semibold text-[14px]">{s.title}</span>
-                    </div>
-                    <p className="mt-2 text-[13px] text-muted leading-snug">{s.text}</p>
+                    <div className="text-[24px] leading-none">{s.emoji}</div>
+                    <div className="mt-2 font-bold text-[15px] leading-tight">{s.title}</div>
                   </button>
                 ))}
               </div>
@@ -273,6 +323,14 @@ export default function Chat({
               {messages.map((m, i) => (
                 <Message key={m.id ?? i} msg={m} streaming={busy && i === messages.length - 1} />
               ))}
+              {/* Fin de la discussion : en commencer une autre en un geste */}
+              {!busy && (
+                <div className="pt-2 flex justify-center">
+                  <Link href="/" onClick={newChat} className="btn">
+                    <Icon name="add_comment" className="text-[20px] text-accent-text" /> Nouvelle discussion
+                  </Link>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -281,25 +339,26 @@ export default function Chat({
       {/* ─── Zone de saisie ─── */}
       <div className="shrink-0 px-3 pb-3 pt-2 md:px-4">
         <div className={`mx-auto max-w-3xl rounded-2xl border border-line glass p-2.5 holo ${busy || listening ? "is-active" : ""}`}>
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-2 px-0.5 text-[11px]">
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-2 px-0.5 text-[13px]">
             <button
               onClick={toggleWeb}
-              className={`shrink-0 inline-flex items-center gap-1 rounded-md border px-2 h-6 font-medium ${
+              title="Kimia cherche aussi sur Internet avant de répondre"
+              className={`shrink-0 inline-flex items-center gap-1.5 rounded-lg border px-2.5 h-8 font-semibold ${
                 webSearch ? "border-cyan/50 bg-cyan-soft text-cyan" : "border-line text-muted"
               }`}
             >
-              <Icon name="travel_explore" className="text-[14px]" /> Web {webSearch ? "activé" : "désactivé"}
+              <Icon name="travel_explore" className="text-[17px]" /> Internet : {webSearch ? "oui" : "non"}
             </button>
             <button
               onClick={() => setPickerOpen(true)}
-              className="shrink-0 inline-flex items-center gap-1 rounded-md border border-line px-2 h-6 font-medium text-muted hover:text-ink"
+              className="shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-line px-2.5 h-8 font-semibold text-muted hover:text-ink"
             >
-              <Icon name="folder_open" className="text-[14px]" /> Mes fichiers
+              <Icon name="folder_open" className="text-[17px]" /> Mes fichiers
             </button>
             {attached.length > 0 && (
               <span className="shrink-0 inline-flex items-center gap-1 text-muted truncate max-w-[50%]" title={attached.map((f) => f.name).join(", ")}>
-                <Icon name="attach_file" className="text-[14px]" />
-                {attached.length} fichier{attached.length > 1 ? "s" : ""} dans le contexte
+                <Icon name="attach_file" className="text-[16px]" />
+                {attached.length} fichier{attached.length > 1 ? "s" : ""} joint{attached.length > 1 ? "s" : ""}
               </span>
             )}
           </div>
@@ -381,14 +440,14 @@ export default function Chat({
                 }
               }}
               rows={1}
-              placeholder="Demande à MARKOVA…"
-              className="flex-1 min-w-0 min-h-10 resize-none rounded-xl bg-soft border border-[var(--hairline)] px-3 py-2.5 text-[15px] outline-none focus:border-accent placeholder:text-muted"
+              placeholder="Écris à Kimia…"
+              className="flex-1 min-w-0 min-h-11 resize-none rounded-xl bg-soft border border-[var(--hairline)] px-3.5 py-2.5 text-[16px] outline-none focus:border-accent placeholder:text-muted"
             />
             {/* Micro : toujours visible */}
             <button
               onClick={mic.start}
               disabled={busy || uploading > 0}
-              aria-label="Parler à MARKOVA"
+              aria-label="Parler à Kimia"
               title="Parler"
               className="shrink-0 grid place-items-center size-10 rounded-xl bg-soft border border-accent/60 text-accent-text hover:bg-accent-soft disabled:opacity-40 pulse-glow"
             >
@@ -437,7 +496,7 @@ function Message({ msg, streaming }: { msg: Msg; streaming: boolean }) {
     <div className="reveal">
       <div className="flex items-center gap-2.5 mb-2">
         <Orb size={22} state={streaming ? "busy" : "idle"} />
-        <span className="label-caps text-accent-text">MARKOVA · Synthèse</span>
+        <span className="text-[14px] font-bold text-accent-text">Kimia</span>
         {streaming && <span className="text-[11px] text-cyan text-holo font-semibold">analyse en cours</span>}
       </div>
 
@@ -467,7 +526,7 @@ function Message({ msg, streaming }: { msg: Msg; streaming: boolean }) {
           streaming &&
           !meta.error && (
             <div className="space-y-2 py-1">
-              <p className="text-[14px] font-semibold text-holo">MARKOVA analyse…</p>
+              <p className="text-[14px] font-semibold text-holo">Kimia réfléchit…</p>
               <div className="skeleton h-3 w-11/12 rounded" />
               <div className="skeleton h-3 w-9/12 rounded" />
               <div className="skeleton h-3 w-10/12 rounded" />

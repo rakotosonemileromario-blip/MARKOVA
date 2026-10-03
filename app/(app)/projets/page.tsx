@@ -142,7 +142,7 @@ export default function ProjectsPage() {
           {projects === null && <p className="text-[13px] text-muted px-1">Chargement…</p>}
           {projects?.length === 0 && (
             <p className="text-[13px] text-muted px-1">
-              Aucun projet. Crée-en un avec « Nouveau », ou dis à MARKOVA : « Crée le projet Business 180 ».
+              Aucun projet. Crée-en un avec « Nouveau », ou dis à Kimia : « Crée le projet Business 180 ».
             </p>
           )}
           {projects && projects.length > 0 && filtered.length === 0 && <p className="text-[13px] text-muted px-1">Aucun projet ne correspond.</p>}
@@ -195,7 +195,7 @@ export default function ProjectsPage() {
         </div>
 
         <p className="mt-6 text-[12px] text-muted">
-          Astuce : dis simplement à MARKOVA « Lumio et Business 180 sont complémentaires » ou « Lumio est dans cFocus » pour lier des projets.
+          Astuce : dis simplement à Kimia « Lumio et Business 180 sont complémentaires » ou « Lumio est dans cFocus » pour lier des projets.
         </p>
       </div>
     </div>
@@ -260,7 +260,7 @@ function ProjectForm({
             value={brandVoice}
             onChange={(e) => setBrandVoice(e.target.value)}
             rows={8}
-            placeholder={"Ton, tutoiement ou vouvoiement, cible, mots à utiliser / éviter, emojis, exemples…\nOu demande à MARKOVA : « Crée la voix de marque à partir de mes publications »."}
+            placeholder={"Ton, tutoiement ou vouvoiement, cible, mots à utiliser / éviter, emojis, exemples…\nOu demande à Kimia : « Crée la voix de marque à partir de mes publications »."}
             className="mt-1 w-full rounded-lg border border-line bg-soft px-3 py-2 text-[14px] outline-none focus:border-accent"
           />
         </label>

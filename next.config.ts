@@ -5,9 +5,11 @@ const nextConfig: NextConfig = {
   // dans les fonctions serverless qui en ont besoin.
   outputFileTracingIncludes: {
     "/api/chat": ["./skills/**/*"],
+    "/api/cron/*": ["./skills/**/*"],
+    "/api/rapport": ["./skills/**/*"],
     "/competences": ["./skills/**/*"],
   },
-  serverExternalPackages: ["exceljs", "mammoth", "unpdf"],
+  serverExternalPackages: ["exceljs", "mammoth", "unpdf", "msedge-tts"],
 };
 
 export default nextConfig;

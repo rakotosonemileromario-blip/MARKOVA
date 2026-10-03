@@ -64,7 +64,7 @@ export default function SkillsManager({ base }: { base: BaseSkill[] }) {
       <div className="mx-auto max-w-3xl px-4 py-6">
         <h1 className="text-[24px] font-bold tracking-tight">Compétences</h1>
         <p className="text-sm text-muted mt-1">
-          MARKOVA choisit lui-même les compétences utiles selon ta demande. Ajoute tes propres méthodes de travail : elles deviennent des compétences.
+          Kimia choisit elle-même les compétences utiles selon ta demande. Ajoute tes propres méthodes de travail : elles deviennent des compétences.
         </p>
 
         <div className="mt-5 flex gap-1 rounded-xl bg-panel border border-line p-1">
@@ -244,7 +244,7 @@ function AddSkill({ onAdded }: { onAdded: () => void }) {
         <input type="checkbox" checked={always} onChange={(e) => setAlways(e.target.checked)} className="mt-0.5 accent-[var(--accent)]" />
         <span>
           <strong>Toujours active</strong>
-          <span className="block text-muted">Sinon, MARKOVA la charge seulement quand ta demande correspond (plus rapide).</span>
+          <span className="block text-muted">Sinon, Kimia la charge seulement quand ta demande correspond (plus rapide).</span>
         </span>
       </label>
 
@@ -254,7 +254,7 @@ function AddSkill({ onAdded }: { onAdded: () => void }) {
         {busy ? "Lecture et analyse de la compétence…" : "Ajouter la compétence"}
       </button>
       <p className="text-[12px] text-muted">
-        MARKOVA lit le document, en déduit le nom, la description et les mots-clés qui déclenchent la compétence. Tu peux ensuite l'activer, la désactiver ou la supprimer.
+        Kimia lit le document, en déduit le nom, la description et les mots-clés qui déclenchent la compétence. Tu peux ensuite l'activer, la désactiver ou la supprimer.
       </p>
     </form>
   );

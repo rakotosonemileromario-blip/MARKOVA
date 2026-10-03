@@ -147,7 +147,7 @@ export default function ProjectSwitcher({ variant = "sidebar" }: { variant?: "si
               </button>
             )}
             <p className="px-2.5 pb-1.5 text-[11px] text-muted leading-snug">
-              Pour lier des projets, dis-le à MARKOVA : « A et B sont complémentaires », « A est dans B ».
+              Pour lier des projets, dis-le à Kimia : « A et B sont complémentaires », « A est dans B ».
             </p>
           </div>
         </div>

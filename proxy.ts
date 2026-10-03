@@ -26,6 +26,7 @@ export async function proxy(request: NextRequest) {
   // /api/cron : tâches planifiées, protégées par CRON_SECRET (pas de session). /sw.js : service worker des notifications.
   const isPublic =
     path.startsWith("/login") ||
+    path.startsWith("/auth/") || // retour des liens email (mot de passe oublié)
     path.startsWith("/confidentialite") ||
     path.startsWith("/suppression-donnees") ||
     path.startsWith("/api/cron/") ||

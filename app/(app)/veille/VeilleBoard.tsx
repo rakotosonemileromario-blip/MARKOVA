@@ -95,7 +95,7 @@ export default function VeilleBoard({ competitors, setupError }: { competitors: 
 
         {!setupError && competitors.length === 0 && (
           <p className="mt-6 text-[13px] text-muted">
-            Aucun concurrent suivi. Ajoute-en un avec « Concurrent », ou dis à MARKOVA : « Surveille mon concurrent X » — il trouvera lui-même ses pages de prix et d'offres.
+            Aucun concurrent suivi. Ajoute-en un avec « Concurrent », ou dis à Kimia : « Surveille mon concurrent X » — il trouvera lui-même ses pages de prix et d'offres.
           </p>
         )}
 

@@ -3,7 +3,7 @@ import { generate } from "@/lib/llm";
 
 export const maxDuration = 30;
 
-const SYSTEM = `Tu transformes une réponse écrite de MARKOVA (assistant marketing) en RÉSUMÉ À LIRE À VOIX HAUTE.
+const SYSTEM = `Tu transformes une réponse écrite de Kimia (assistante marketing) en RÉSUMÉ À LIRE À VOIX HAUTE.
 - 50 à 120 mots maximum, en français parlé, phrases courtes, tutoiement.
 - Dis seulement l'essentiel : la conclusion, les chiffres clés, puis ce qu'il faut faire maintenant.
 - Aucun markdown, aucune liste, aucun emoji, aucun lien, aucune étiquette entre crochets, aucun tableau.

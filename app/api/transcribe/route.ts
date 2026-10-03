@@ -7,7 +7,7 @@ const MODEL_TIMEOUT_MS = 15_000;
 
 // Vocabulaire que l'utilisateur emploie souvent : aide à reconnaître les termes mal prononcés ou anglais.
 const VOCABULARY =
-  "MARKOVA, Meta, Meta Ads, Facebook, Instagram, TikTok, LinkedIn, Google Ads, Google Analytics, Search Console, Gmail, Drive, Google Sheets, " +
+  "Kimia, MARKOVA, Meta, Meta Ads, Facebook, Instagram, TikTok, LinkedIn, Google Ads, Google Analytics, Search Console, Gmail, Drive, Google Sheets, " +
   "CPL, CPA, CPC, CPM, CTR, ROAS, KPI, lead, leads, campagne, ensemble de publicités, budget, créatif, hook, reels, carrousel, story, " +
   "SEO, CRM, newsletter, landing page, funnel, tunnel de vente, retargeting, audience, briefing, tâche, agenda, projet";
 
@@ -31,8 +31,8 @@ export async function POST(req: Request) {
   const names = [...(projects ?? []).map((p) => p.name), ...(integrations ?? []).map((i) => i.account_email)].filter(Boolean).join(", ");
 
   const instruction = [
-    "Tu transcris un message vocal adressé à MARKOVA, l'assistant marketing de l'utilisateur.",
-    "L'utilisateur est malgache : il parle français avec un accent malgache (voyelles et « r » différents, certaines consonnes adoucies, rythme propre) et mélange parfois des mots ou phrases en malgache.",
+    "Tu transcris un message vocal adressé à Kimia, l'assistante marketing de l'utilisateur.",
+    "L'utilisateur parle français, souvent avec un accent (par exemple malgache ou québécois). S'il est malgache : accent malgache (voyelles et « r » différents, certaines consonnes adoucies, rythme propre) et mélange parfois des mots ou phrases en malgache.",
     "Règles :",
     "1. Écris ce qu'il a VOULU dire, en français correct et naturel, en respectant fidèlement le sens et l'ordre des idées. N'ajoute rien, ne résume pas, ne réponds pas à la demande.",
     "2. Les passages en malgache sont traduits en français dans la phrase (sans les signaler).",

@@ -123,6 +123,9 @@ function searchBlock(list: Search[], refs: { title: string; url: string }[]) {
 export function linkify(text: string, refs: { title: string; url: string }[], allowed: Set<string>) {
   const ok = new Set([...allowed, ...refs.map((r) => r.url)]);
   return text
+    // Variantes écrites par l'IA (« [[3]] » sans lien, « [(3)] ») ramenées à « [3] ».
+    .replace(/\[\[(\d{1,3})\]\](?!\()/g, "[$1]")
+    .replace(/\[\((\d{1,3})\)\]/g, "[$1]")
     .replace(/(?<!\[)\[(\d{1,3})\](?![(\]])/g, (m, n) => {
       const r = refs[Number(n) - 1];
       return r ? `[[${n}]](${r.url})` : "";
@@ -178,7 +181,9 @@ export function context(s: Study, project: { name: string; description: string |
 
 const STEP_PROMPTS: Record<Exclude<Step, "plan">, string> = {
   offres:
-    "Étape OFFRES. À partir du site, des informations du projet et des offres décrites, rédige : ### 🧾 Offres (tableau Offre | Pour qui | Prix si connu | Bénéfice principal), ### 💎 Positionnement et avantages, ### ❓ Informations manquantes (ce qu'il faudrait préciser). Ne déduis aucun prix.",
+    "Étape OFFRES. À partir UNIQUEMENT de ce qui est fourni (fichiers et mémoire du projet, site, offres décrites, description), rédige : ### 🧾 Offres (tableau Offre | Pour qui | Prix si connu | Bénéfice principal), ### 💎 Positionnement et avantages, ### ❓ Informations manquantes (ce qu'il faudrait préciser). " +
+    "Reprends les noms, formules et prix EXACTS des documents. N'invente AUCUNE offre, aucun pack, aucun prix, aucun argument (écologique, local…) qui n'y figure pas. " +
+    "Si les informations fournies ne disent pas concrètement ce que vend le projet, réponds UNIQUEMENT : INFO_INSUFFISANTE: <ce qu'il faut que l'utilisateur précise>.",
   cibles:
     "Étape CIBLES. Identifie les 3 à 5 clients types les plus pertinents POUR CES OFFRES SUR CE MARCHÉ. Pour chacun : ### 👤 nom parlant (ex. « La PME qui veut vendre en ligne »), puis profil (B2B : secteur, taille, décideur ; B2C : âge, situation, revenus, lieu), problème principal, motivations, freins et objections, déclencheurs d'achat, où le toucher (canaux, réseaux, moments), message clé (dans la langue du marché), priorité (🔥 haute / 🟡 moyenne / ⚪ faible) et pourquoi. Termine par un tableau récapitulatif Cible | Taille estimée du potentiel (qualitative) | Facilité à convaincre | Priorité.",
   besoins:
@@ -200,23 +205,52 @@ const PLAN_SYSTEM = `${COMMON}
 - cibles / besoins / pestel : requêtes de recherche Web À FAIRE DANS LA LANGUE DU MARCHÉ et centrées sur CE pays / cette région (clients, avis, forums, attentes, actualités, réglementation…).
 - graines : 8 à 12 débuts de recherche Google courts (1 à 3 mots, dans la langue du marché) que les clients taperaient pour trouver ces offres (sans le nom de la marque).`;
 
-export async function runStep(s: Study, step: Step, base: string) {
-  // Sources de cette étape, numérotées [1], [2]… dans l'ordre où elles sont montrées à l'IA.
-  const sources: { title: string; url: string }[] = [];
+/**
+ * Ce que MARKOVA sait réellement du projet : description, mémoire, fichiers (textes, PDF, Word, tableurs).
+ * Sert à l'étape « offres » et à vérifier, avant de lancer une étude, qu'il y a de quoi travailler.
+ */
+export async function projectKnowledge(supabase: SupabaseClient, projectId: string | null) {
+  if (!projectId) return "";
+  const [{ data: project }, { data: mems }, { data: files }] = await Promise.all([
+    supabase.from("projects").select("name, description").eq("id", projectId).maybeSingle(),
+    supabase.from("memories").select("category, content").eq("project_id", projectId).eq("active", true).limit(40),
+    supabase.from("files").select("name, extracted_text").eq("project_id", projectId).eq("status", "pret").not("extracted_text", "is", null).order("created_at", { ascending: false }).limit(10),
+  ]);
+  let budget = 18_000;
+  const docs = (files ?? [])
+    .map((f) => {
+      const text = String(f.extracted_text ?? "").trim().slice(0, Math.max(0, budget));
+      budget -= text.length;
+      return text ? `### 📎 ${f.name}\n${text}` : "";
+    })
+    .filter(Boolean);
+  return [
+    project?.description ? `DESCRIPTION DU PROJET : ${project.description}` : "",
+    mems?.length ? `MÉMOIRE DU PROJET :\n${mems.map((m) => `- (${m.category}) ${m.content}`).join("\n")}` : "",
+    docs.length ? `FICHIERS DU PROJET :\n${docs.join("\n\n")}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+export async function runStep(s: Study, step: Step, base: string, knowledge = "") {
+  // Numérotation unique pour toute l'étude : les sources des étapes précédentes gardent leur numéro,
+  // celles de cette étape continuent la suite (une synthèse peut donc citer [13] d'une étape antérieure).
+  const refs: { title: string; url: string }[] = [...s.sources];
   const plan = s.sections.plan ? (JSON.parse(s.sections.plan) as { secteur?: string; cibles?: string[]; besoins?: string[]; pestel?: string[]; graines?: string[] }) : {};
   const done = (k: Step) => (s.sections[k] ? `\n\n## Étape ${STEP_LABELS[k]} (déjà faite)\n${s.sections[k]}` : "");
 
   if (step === "plan") {
-    return { text: JSON.stringify(parseJson(await ask(PLAN_SYSTEM, base))), sources };
+    return { text: JSON.stringify(parseJson(await ask(PLAN_SYSTEM, base + done("offres")))), sources: [] };
   }
   let extra = "";
   let suggestions = new Set<string>();
   if (step === "cibles") {
-    extra = done("offres") + `\n\n## Recherches\n${searchBlock(await searches(plan.cibles ?? []), sources)}`;
+    extra = done("offres") + `\n\n## Recherches\n${searchBlock(await searches(plan.cibles ?? []), refs)}`;
   } else if (step === "besoins") {
-    extra = done("offres") + done("cibles") + `\n\n## Recherches\n${searchBlock(await searches(plan.besoins ?? []), sources)}`;
+    extra = done("offres") + done("cibles") + `\n\n## Recherches\n${searchBlock(await searches(plan.besoins ?? []), refs)}`;
   } else if (step === "pestel") {
-    extra = done("offres") + `\n\n## Actualités (12 derniers mois)\n${searchBlock(await searches(plan.pestel ?? [], { topic: "news", days: 365 }), sources)}`;
+    extra = done("offres") + `\n\n## Actualités (12 derniers mois)\n${searchBlock(await searches(plan.pestel ?? [], { topic: "news", days: 365 }), refs)}`;
   } else if (step === "mots_cles") {
     const seeds = (plan.graines ?? []).slice(0, 12);
     const lists = await Promise.all(seeds.map((g) => googleSuggest(g, s.country, s.language).catch(() => [] as string[])));
@@ -227,14 +261,18 @@ export async function runStep(s: Study, step: Step, base: string) {
     extra = done("cibles") + done("besoins") + done("pestel") + done("mots_cles");
   } else if (step === "synthese") {
     extra = done("offres") + done("cibles") + done("besoins") + done("pestel") + done("mots_cles") + done("sujets");
-  } else if (step === "offres" && s.inputs.site) {
-    extra = `\n\n## Site\n${(await readWebPage(s.inputs.site).catch((e) => `(site illisible : ${e instanceof Error ? e.message : e})`)).slice(0, 12_000)}`;
+  } else if (step === "offres") {
+    extra =
+      (knowledge ? `\n\n${knowledge}` : "") +
+      (s.inputs.site
+        ? `\n\n## Site\n${(await readWebPage(s.inputs.site).catch((e) => `(site illisible : ${e instanceof Error ? e.message : e})`)).slice(0, 12_000)}`
+        : "");
   }
   let raw = await ask(`${COMMON}\n\n${STEP_PROMPTS[step as Exclude<Step, "plan">]}`, base + extra);
   if (step === "mots_cles") raw = flagUnseenKeywords(raw, suggestions);
   // Liens autorisés : sources de cette étape, des étapes précédentes (recopiées) et le site fourni.
   const allowed = new Set([...s.sources.map((x) => x.url), ...(s.inputs.site ? [s.inputs.site] : [])]);
-  return { text: linkify(raw, sources, allowed), sources };
+  return { text: linkify(raw, refs, allowed), sources: refs.slice(s.sources.length) };
 }
 
 /**
@@ -257,10 +295,7 @@ export async function runStudy(supabase: SupabaseClient, studyId: string, deadli
   const { data: project } = s.project_id
     ? await supabase.from("projects").select("name, description, brand_voice").eq("id", s.project_id).maybeSingle()
     : { data: null };
-  const { data: mems } = s.project_id
-    ? await supabase.from("memories").select("content").eq("project_id", s.project_id).eq("active", true).in("category", ["projet", "objectif"]).limit(20)
-    : { data: [] };
-  const memo = mems?.length ? `INFORMATIONS DU PROJET (mémoire) :\n${mems.map((m) => `- ${m.content}`).join("\n")}` : "";
+  const knowledge = await projectKnowledge(supabase, s.project_id);
 
   try {
     for (const step of STEPS) {
@@ -271,10 +306,17 @@ export async function runStudy(supabase: SupabaseClient, studyId: string, deadli
         return "en_attente";
       }
       const plan = s.sections.plan ? (JSON.parse(s.sections.plan) as { secteur?: string }) : {};
-      const base = context(s, project, memo) + (plan.secteur && !s.inputs.secteur ? `\n\nSECTEUR (déduit) : ${plan.secteur}` : "");
-      const { text, sources } = await runStep(s, step, base);
+      const base = context(s, project, "") + (plan.secteur && !s.inputs.secteur ? `\n\nSECTEUR (déduit) : ${plan.secteur}` : "");
+      const { text, sources } = await runStep(s, step, base, knowledge);
+      if (step === "offres" && /^\s*INFO_INSUFFISANTE/i.test(text)) {
+        // On s'arrête plutôt que d'inventer le produit : l'utilisateur doit décrire ses offres.
+        const missing = text.replace(/^\s*INFO_INSUFFISANTE\s*:?\s*/i, "").trim();
+        throw new Error(
+          `MARKOVA ne sait pas encore ce que vend ce projet${missing ? ` (${missing.slice(0, 300)})` : ""}. Décris tes offres (produits, formules, prix, pour qui), donne le site, ou ajoute la fiche produit dans les fichiers du projet, puis relance l'étude.`,
+        );
+      }
       s.sections[step] = text;
-      s.sources = [...s.sources, ...sources.filter((x) => !s.sources.some((y) => y.url === x.url))].slice(0, 120);
+      s.sources = [...s.sources, ...sources]; // ni dédoublonnage ni coupe : le numéro [n] d'une source = sa position
       await supabase
         .from("market_studies")
         .update({ sections: s.sections, sources: s.sources, started_at: new Date().toISOString(), updated_at: new Date().toISOString() })
@@ -464,6 +506,14 @@ export async function runMarketTool(
   const fresh = same.find((x) => x.status === "terminee" && Date.now() - new Date(x.created_at).getTime() < 30 * 86_400_000);
   if (fresh && !args.forcer) {
     return `Une étude « ${project.name} » · ${market.label} existe déjà (du ${String(fresh.created_at).slice(0, 10)}). Utilise etude_marche_lire ; ne relance (forcer) que si l'utilisateur le demande explicitement.`;
+  }
+  // Sans rien sur ce que vend le projet, l'étude serait inventée : on demande d'abord.
+  const offres = String(args.offres ?? "").trim();
+  if (!args.site && offres.length < 60 && !(await projectKnowledge(supabase, project.id))) {
+    return (
+      `Je ne sais pas encore ce que vend « ${project.name} » : ni description, ni mémoire, ni fichier dans le projet. ` +
+      `Demande à l'utilisateur ses offres (produits ou services, formules, prix, pour qui) ou son site, ou de joindre sa fiche produit au projet, puis relance avec « offres » ou « site ». Ne lance pas l'étude sans ces informations.`
+    );
   }
   const { data: created, error: insErr } = await supabase
     .from("market_studies")

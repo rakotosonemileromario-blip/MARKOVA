@@ -2,7 +2,8 @@
 
 export type Market = { label: string; country: string; region?: string | null; language: string; pages?: string[] };
 
-export const STEPS = ["plan", "offres", "cibles", "besoins", "pestel", "mots_cles", "sujets", "synthese"] as const;
+// Les offres d'abord : le plan de recherche est construit à partir de ce que le projet vend réellement.
+export const STEPS = ["offres", "plan", "cibles", "besoins", "pestel", "mots_cles", "sujets", "synthese"] as const;
 export type Step = (typeof STEPS)[number];
 export const STEP_LABELS: Record<Step, string> = {
   plan: "Préparation",

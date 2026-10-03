@@ -34,6 +34,9 @@ function allCountries() {
   return out.sort((x, y) => x.name.localeCompare(y.name, "fr"));
 }
 
+/** Une source citée par plusieurs recherches n'apparaît qu'une fois dans la liste. */
+const uniqueSources = (list: { title: string; url: string }[]) => list.filter((s, i) => list.findIndex((x) => x.url === s.url) === i);
+
 const day = (iso: string) => new Date(iso).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" });
 
 export default function MarketBoard() {
@@ -264,9 +267,9 @@ function StudyView({ study, tab, setTab }: { study: Study; tab: Step; setTab: (s
 
       {study.sources.length > 0 && (
         <details className="mt-4 text-[12px]">
-          <summary className="cursor-pointer text-muted">{study.sources.length} sources consultées</summary>
+          <summary className="cursor-pointer text-muted">{uniqueSources(study.sources).length} sources consultées</summary>
           <ul className="mt-2 space-y-1">
-            {study.sources.map((s) => (
+            {uniqueSources(study.sources).map((s) => (
               <li key={s.url} className="truncate">
                 <a href={s.url} target="_blank" rel="noreferrer" className="text-cyan">
                   {s.title || s.url}
